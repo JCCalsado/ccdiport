@@ -31,7 +31,7 @@ class User extends Authenticatable
         'profile_picture',
         'course',
         'year_level',
-        'faculty', // Added for accounting/admin users
+        'faculty',
         'status',
         'role',
     ];
@@ -40,6 +40,9 @@ class User extends Authenticatable
         'password',
         'remember_token',
     ];
+
+    // Set the appends property to include virtual attributes
+    protected $appends = ['name'];
 
     protected function casts(): array
     {
@@ -67,14 +70,30 @@ class User extends Authenticatable
         return $this->hasMany(Transaction::class);
     }
 
-    // Derived full name accessor
+    /**
+     * Get the user's full name.
+     * This is the main accessor that will be serialized in API responses.
+     */
+    public function getNameAttribute(): string
+    {
+        $mi = $this->middle_initial ? ' ' . strtoupper($this->middle_initial) . '.' : '';
+        return "{$this->last_name}, {$this->first_name}{$mi}";
+    }
+
+    /**
+     * Get the user's full name (alternative format).
+     * Use this for display purposes where you want "Last, First MI."
+     */
     public function getFullNameAttribute(): string
     {
         $mi = $this->middle_initial ? "{$this->middle_initial}." : '';
         return "{$this->last_name}, {$this->first_name} {$mi}";
     }
 
-    public static function getValidationRules($userId = null)
+    /**
+     * Get validation rules for user updates
+     */
+    public static function getValidationRules($userId = null): array
     {
         return [
             'student_id' => 'nullable|string|unique:users,student_id,' . $userId,
@@ -86,12 +105,4 @@ class User extends Authenticatable
             'profile_picture' => 'nullable|image|mimes:jpeg,png,jpg,gif|max:2048',
         ];
     }
-
-    public function getNameAttribute(): string
-    {
-        $mi = $this->middle_initial ? ' ' . strtoupper($this->middle_initial) . '.' : '';
-        return "{$this->last_name}, {$this->first_name}{$mi}";
-    }
-
-    protected $appends = ['name'];
 }

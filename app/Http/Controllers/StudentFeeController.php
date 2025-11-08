@@ -12,6 +12,7 @@ use App\Models\Payment;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Str;
 use Barryvdh\DomPDF\Facade\Pdf;
 
@@ -381,6 +382,9 @@ class StudentFeeController extends Controller
         ]);
     }
 
+    /**
+     * Export assessment to PDF
+     */
     public function exportPdf($userId)
     {
         $student = User::with(['student', 'account'])

@@ -14,7 +14,9 @@ class StudentFeePolicy
      */
     public function viewAny(User $user): bool
     {
-        return in_array($user->role->value, ['admin', 'accounting']);
+        // Get the role value properly (handles both string and enum)
+        $roleValue = $this->getRoleValue($user);
+        return in_array($roleValue, ['admin', 'accounting']);
     }
 
     /**
@@ -22,8 +24,11 @@ class StudentFeePolicy
      */
     public function view(User $user, User $student): bool
     {
+        // Get the role value properly
+        $roleValue = $this->getRoleValue($user);
+        
         // Admin and accounting can view any student
-        if (in_array($user->role->value, ['admin', 'accounting'])) {
+        if (in_array($roleValue, ['admin', 'accounting'])) {
             return true;
         }
 
@@ -36,7 +41,8 @@ class StudentFeePolicy
      */
     public function create(User $user): bool
     {
-        return in_array($user->role->value, ['admin', 'accounting']);
+        $roleValue = $this->getRoleValue($user);
+        return in_array($roleValue, ['admin', 'accounting']);
     }
 
     /**
@@ -44,7 +50,8 @@ class StudentFeePolicy
      */
     public function update(User $user, User $student): bool
     {
-        return in_array($user->role->value, ['admin', 'accounting']);
+        $roleValue = $this->getRoleValue($user);
+        return in_array($roleValue, ['admin', 'accounting']);
     }
 
     /**
@@ -52,6 +59,24 @@ class StudentFeePolicy
      */
     public function recordPayment(User $user): bool
     {
-        return in_array($user->role->value, ['admin', 'accounting']);
+        $roleValue = $this->getRoleValue($user);
+        return in_array($roleValue, ['admin', 'accounting']);
+    }
+
+    /**
+     * Helper method to get role value from User model
+     * Handles both string and enum types
+     */
+    private function getRoleValue(User $user): string
+    {
+        $role = $user->role;
+        
+        // If it's an object (enum), get the value
+        if (is_object($role)) {
+            return $role->value ?? (string) $role;
+        }
+        
+        // If it's already a string, return it
+        return (string) $role;
     }
 }
