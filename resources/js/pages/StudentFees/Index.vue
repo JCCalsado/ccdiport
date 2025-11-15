@@ -272,26 +272,33 @@ const formatCurrency = (amount: number) => {
                     </table>
                 </div>
 
-                <!-- Pagination -->
+                <!-- Fixed Pagination -->
                 <div class="flex items-center justify-between px-6 py-4 border-t border-gray-200 bg-gray-50" v-if="students.last_page > 1">
                     <div class="text-sm text-gray-600">
                         Page {{ students.current_page }} of {{ students.last_page }}
                     </div>
                     <div class="flex gap-2">
-                        <Link
-                            v-for="(link, index) in students.links"
-                            :key="index"
-                            :href="link.url"
-                            :class="[
-                                'px-3 py-1 rounded border text-sm',
-                                link.active 
-                                    ? 'bg-blue-600 text-white border-blue-600' 
-                                    : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50',
-                                !link.url && 'opacity-50 cursor-not-allowed'
-                            ]"
-                            :disabled="!link.url"
-                            v-html="link.label"
-                        />
+                        <template v-for="(link, index) in students.links" :key="index">
+                            <Link
+                                v-if="link.url"
+                                :href="link.url"
+                                :class="[
+                                    'px-3 py-1 rounded border text-sm',
+                                    link.active 
+                                        ? 'bg-blue-600 text-white border-blue-600' 
+                                        : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
+                                ]"
+                                v-html="link.label"
+                            />
+                            <span
+                                v-else
+                                :class="[
+                                    'px-3 py-1 rounded border text-sm',
+                                    'bg-white text-gray-400 border-gray-300 opacity-50 cursor-not-allowed'
+                                ]"
+                                v-html="link.label"
+                            />
+                        </template>
                     </div>
                 </div>
             </div>

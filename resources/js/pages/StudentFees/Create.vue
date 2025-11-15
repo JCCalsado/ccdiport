@@ -103,14 +103,14 @@ const form: any = useForm({
 // Calculate totals
 const tuitionTotal = computed(() => {
     return selectedSubjects.value.reduce((sum, s) => {
-        const amount = parseFloat(s.amount) || 0;
+        const amount = s.amount || 0;
         return sum + amount;
     }, 0);
 });
 
 const otherFeesTotal = computed(() => {
     return selectedFees.value.reduce((sum, f) => {
-        const amount = parseFloat(f.amount) || 0;
+        const amount = f.amount || 0;
         return sum + amount;
     }, 0);
 });
