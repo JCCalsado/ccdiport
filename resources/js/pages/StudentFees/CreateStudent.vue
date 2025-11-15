@@ -6,14 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { ArrowLeft } from 'lucide-vue-next';
-
-// ✅ Props now include dynamic courses from backend
-interface Props {
-    courses: string[];
-    yearLevels: string[];
-}
-
-const props = defineProps<Props>();
+import { computed } from 'vue';
 
 const breadcrumbs = [
     { title: 'Dashboard', href: route('dashboard') },
@@ -26,7 +19,7 @@ const form = useForm({
     first_name: '',
     middle_initial: '',
     email: '',
-    password: 'password',
+    password: 'password', // Default password
     password_confirmation: 'password',
     birthday: '',
     year_level: '',
@@ -36,14 +29,43 @@ const form = useForm({
     student_id: '',
 });
 
+const yearLevels = ['1st Year', '2nd Year', '3rd Year', '4th Year'];
+const courses = [
+    'BS Electrical Engineering Technology',
+    'BS Electronics Engineering Technology',
+    'BS Computer Science',
+    'BS Information Technology',
+    'BS Accountancy',
+    'BS Business Administration',
+];
+
 const submit = () => {
     form.post(route('student-fees.store-student'), {
         preserveScroll: true,
         onSuccess: () => {
             form.reset();
         },
+        onError: (errors) => {
+            console.error('Form errors:', errors);
+        },
     });
 };
+
+// Compute full name for preview
+const fullName = computed(() => {
+    const parts = [
+        form.last_name,
+        form.first_name,
+        form.middle_initial ? `${form.middle_initial}.` : '',
+    ].filter(Boolean);
+    return parts.join(' ') || 'Student Name';
+});
+
+// Email validation helper
+const isValidEmail = computed(() => {
+    if (!form.email) return true;
+    return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email);
+});
 </script>
 
 <template>
@@ -69,18 +91,35 @@ const submit = () => {
                 </div>
             </div>
 
-            <div @submit.prevent="submit" class="space-y-6">
+            <!-- Preview Card -->
+            <div class="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-lg border-2 border-blue-200 p-6">
+                <div class="flex items-center gap-4">
+                    <div class="bg-blue-600 text-white rounded-full w-16 h-16 flex items-center justify-center text-2xl font-bold">
+                        {{ form.first_name ? form.first_name[0].toUpperCase() : '?' }}{{ form.last_name ? form.last_name[0].toUpperCase() : '' }}
+                    </div>
+                    <div>
+                        <p class="text-lg font-semibold text-gray-900">{{ fullName }}</p>
+                        <p class="text-sm text-gray-600">{{ form.email || 'email@example.com' }}</p>
+                        <p class="text-sm text-gray-600">{{ form.student_id || 'Auto-generated ID' }}</p>
+                    </div>
+                </div>
+            </div>
+
+            <form @submit.prevent="submit" class="space-y-6">
                 <!-- Personal Information -->
                 <div class="bg-white rounded-lg shadow-sm border p-6">
                     <h2 class="text-lg font-semibold mb-4">Personal Information</h2>
                     <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
                         <div class="space-y-2">
-                            <Label for="last_name">Last Name *</Label>
+                            <Label for="last_name" class="text-sm font-medium">
+                                Last Name <span class="text-red-500">*</span>
+                            </Label>
                             <Input
                                 id="last_name"
                                 v-model="form.last_name"
                                 required
                                 placeholder="Dela Cruz"
+                                :class="{ 'border-red-500': form.errors.last_name }"
                             />
                             <p v-if="form.errors.last_name" class="text-sm text-red-500">
                                 {{ form.errors.last_name }}
@@ -88,12 +127,15 @@ const submit = () => {
                         </div>
 
                         <div class="space-y-2">
-                            <Label for="first_name">First Name *</Label>
+                            <Label for="first_name" class="text-sm font-medium">
+                                First Name <span class="text-red-500">*</span>
+                            </Label>
                             <Input
                                 id="first_name"
                                 v-model="form.first_name"
                                 required
                                 placeholder="Juan"
+                                :class="{ 'border-red-500': form.errors.first_name }"
                             />
                             <p v-if="form.errors.first_name" class="text-sm text-red-500">
                                 {{ form.errors.first_name }}
@@ -101,12 +143,15 @@ const submit = () => {
                         </div>
 
                         <div class="space-y-2">
-                            <Label for="middle_initial">Middle Initial</Label>
+                            <Label for="middle_initial" class="text-sm font-medium">
+                                Middle Initial
+                            </Label>
                             <Input
                                 id="middle_initial"
                                 v-model="form.middle_initial"
                                 maxlength="10"
-                                placeholder="P"
+                                placeholder="P. (Optional)"
+                                :class="{ 'border-red-500': form.errors.middle_initial }"
                             />
                             <p v-if="form.errors.middle_initial" class="text-sm text-red-500">
                                 {{ form.errors.middle_initial }}
@@ -116,26 +161,39 @@ const submit = () => {
 
                     <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
                         <div class="space-y-2">
-                            <Label for="email">Email *</Label>
+                            <Label for="email" class="text-sm font-medium">
+                                Email <span class="text-red-500">*</span>
+                            </Label>
                             <Input
                                 id="email"
                                 v-model="form.email"
                                 type="email"
                                 required
                                 placeholder="student@ccdi.edu.ph"
+                                :class="{ 
+                                    'border-red-500': form.errors.email || !isValidEmail,
+                                    'border-green-500': isValidEmail && form.email
+                                }"
                             />
                             <p v-if="form.errors.email" class="text-sm text-red-500">
                                 {{ form.errors.email }}
                             </p>
+                            <p v-else-if="!isValidEmail && form.email" class="text-sm text-amber-500">
+                                Please enter a valid email address
+                            </p>
                         </div>
 
                         <div class="space-y-2">
-                            <Label for="birthday">Birthday *</Label>
+                            <Label for="birthday" class="text-sm font-medium">
+                                Birthday <span class="text-red-500">*</span>
+                            </Label>
                             <Input
                                 id="birthday"
                                 v-model="form.birthday"
                                 type="date"
                                 required
+                                :max="new Date().toISOString().split('T')[0]"
+                                :class="{ 'border-red-500': form.errors.birthday }"
                             />
                             <p v-if="form.errors.birthday" class="text-sm text-red-500">
                                 {{ form.errors.birthday }}
@@ -149,12 +207,15 @@ const submit = () => {
                     <h2 class="text-lg font-semibold mb-4">Contact Information</h2>
                     <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <div class="space-y-2">
-                            <Label for="phone">Phone Number *</Label>
+                            <Label for="phone" class="text-sm font-medium">
+                                Phone Number <span class="text-red-500">*</span>
+                            </Label>
                             <Input
                                 id="phone"
                                 v-model="form.phone"
                                 required
                                 placeholder="09171234567"
+                                :class="{ 'border-red-500': form.errors.phone }"
                             />
                             <p v-if="form.errors.phone" class="text-sm text-red-500">
                                 {{ form.errors.phone }}
@@ -162,12 +223,15 @@ const submit = () => {
                         </div>
 
                         <div class="space-y-2">
-                            <Label for="address">Address *</Label>
+                            <Label for="address" class="text-sm font-medium">
+                                Address <span class="text-red-500">*</span>
+                            </Label>
                             <Input
                                 id="address"
                                 v-model="form.address"
                                 required
                                 placeholder="Sorsogon City"
+                                :class="{ 'border-red-500': form.errors.address }"
                             />
                             <p v-if="form.errors.address" class="text-sm text-red-500">
                                 {{ form.errors.address }}
@@ -181,11 +245,14 @@ const submit = () => {
                     <h2 class="text-lg font-semibold mb-4">Academic Information</h2>
                     <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
                         <div class="space-y-2">
-                            <Label for="student_id">Student ID (Optional)</Label>
+                            <Label for="student_id" class="text-sm font-medium">
+                                Student ID (Optional)
+                            </Label>
                             <Input
                                 id="student_id"
                                 v-model="form.student_id"
-                                placeholder="Auto-generated if empty"
+                                placeholder="2025-0001"
+                                :class="{ 'border-red-500': form.errors.student_id }"
                             />
                             <p class="text-xs text-gray-500">Leave empty to auto-generate</p>
                             <p v-if="form.errors.student_id" class="text-sm text-red-500">
@@ -193,18 +260,22 @@ const submit = () => {
                             </p>
                         </div>
 
-                        <!-- ✅ FIXED: Course dropdown now uses dynamic data from backend -->
                         <div class="space-y-2">
-                            <Label for="course">Course *</Label>
+                            <Label for="course" class="text-sm font-medium">
+                                Course <span class="text-red-500">*</span>
+                            </Label>
                             <select
                                 id="course"
                                 v-model="form.course"
                                 required
-                                class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                                :class="[
+                                    'w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent',
+                                    form.errors.course ? 'border-red-500' : 'border-gray-300'
+                                ]"
                             >
                                 <option value="">Select course</option>
                                 <option
-                                    v-for="course in props.courses"
+                                    v-for="course in courses"
                                     :key="course"
                                     :value="course"
                                 >
@@ -217,16 +288,21 @@ const submit = () => {
                         </div>
 
                         <div class="space-y-2">
-                            <Label for="year_level">Year Level *</Label>
+                            <Label for="year_level" class="text-sm font-medium">
+                                Year Level <span class="text-red-500">*</span>
+                            </Label>
                             <select
                                 id="year_level"
                                 v-model="form.year_level"
                                 required
-                                class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                                :class="[
+                                    'w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent',
+                                    form.errors.year_level ? 'border-red-500' : 'border-gray-300'
+                                ]"
                             >
                                 <option value="">Select year level</option>
                                 <option
-                                    v-for="year in props.yearLevels"
+                                    v-for="year in yearLevels"
                                     :key="year"
                                     :value="year"
                                 >
@@ -247,21 +323,29 @@ const submit = () => {
                     </p>
                 </div>
 
+                <!-- General Error Display -->
+                <div v-if="form.errors.error" class="bg-red-50 border border-red-200 rounded-lg p-4">
+                    <p class="text-sm text-red-800">
+                        <strong>Error:</strong> {{ form.errors.error }}
+                    </p>
+                </div>
+
                 <!-- Actions -->
                 <div class="flex items-center justify-end gap-4">
                     <Link :href="route('student-fees.index')">
-                        <Button type="button" variant="outline">
+                        <Button type="button" variant="outline" :disabled="form.processing">
                             Cancel
                         </Button>
                     </Link>
                     <Button 
-                        @click="submit"
-                        :disabled="form.processing"
+                        type="submit" 
+                        :disabled="form.processing || !isValidEmail"
+                        class="min-w-[150px]"
                     >
-                        Add Student
+                        {{ form.processing ? 'Adding Student...' : 'Add Student' }}
                     </Button>
                 </div>
-            </div>
+            </form>
         </div>
     </AppLayout>
 </template>

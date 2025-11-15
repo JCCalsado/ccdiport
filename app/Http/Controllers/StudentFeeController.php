@@ -471,87 +471,88 @@ class StudentFeeController extends Controller
             'last_name' => 'required|string|max:255',
             'first_name' => 'required|string|max:255',
             'middle_initial' => 'nullable|string|max:10',
-            'email' => 'required|string|lowercase|email|max:255|unique:users',
-            'birthday' => 'required|date|before:today|after:1900-01-01',
-            'year_level' => 'required|string|in:1st Year,2nd Year,3rd Year,4th Year',
-            'course' => 'required|string|max:255', // ✅ Allow any course from database
+            'email' => 'required|email|unique:users,email',
+            'birthday' => 'required|date',
+            'phone' => 'required|string|max:20',
             'address' => 'required|string|max:255',
-            'phone' => 'required|string|max:20|regex:/^([0-9\s\-\+\(\)]*)$/',
-            'student_id' => 'nullable|string|max:50|unique:users,student_id',
+            'year_level' => 'required|string',
+            'course' => 'required|string',
+            'student_id' => 'nullable|string|unique:users,student_id',
         ]);
 
         DB::beginTransaction();
         try {
-            // Generate student ID if not provided
-            if (empty($validated['student_id'])) {
-                $year = now()->year;
-                $lastStudent = User::where('student_id', 'like', "{$year}-%")
-                    ->orderBy('id', 'desc')
-                    ->first();
+            // Auto-generate ID if empty
+            $studentId = $validated['student_id'] ?: $this->generateUniqueStudentId();
 
-                if ($lastStudent) {
-                    $lastNumber = intval(substr($lastStudent->student_id, -4));
-                    $newNumber = str_pad($lastNumber + 1, 4, '0', STR_PAD_LEFT);
-                } else {
-                    $newNumber = '0001';
-                }
-
-                $validated['student_id'] = "{$year}-{$newNumber}";
-            }
-
-            // Create user
+            // Create user record
             $user = User::create([
                 'last_name' => $validated['last_name'],
                 'first_name' => $validated['first_name'],
                 'middle_initial' => $validated['middle_initial'],
                 'email' => $validated['email'],
-                'password' => Hash::make('password'),
                 'birthday' => $validated['birthday'],
+                'phone' => $validated['phone'],
+                'address' => $validated['address'],
                 'year_level' => $validated['year_level'],
                 'course' => $validated['course'],
-                'address' => $validated['address'],
-                'phone' => $validated['phone'],
-                'student_id' => $validated['student_id'],
-                'status' => User::STATUS_ACTIVE,
+                'student_id' => $studentId,
                 'role' => 'student',
-            ]);
-
-            // Create account
-            $user->account()->create(['balance' => 0]);
-
-            // Create student record
-            Student::create([
-                'user_id' => $user->id,
-                'student_id' => $validated['student_id'],
-                'last_name' => $validated['last_name'],
-                'first_name' => $validated['first_name'],
-                'middle_initial' => $validated['middle_initial'],
-                'email' => $validated['email'],
-                'course' => $validated['course'],
-                'year_level' => $validated['year_level'],
-                'birthday' => $validated['birthday'],
-                'phone' => $validated['phone'],
-                'address' => $validated['address'],
-                'total_balance' => 0,
-                'status' => 'enrolled',
+                'status' => User::STATUS_ACTIVE,
+                'password' => Hash::make('password'), // Default password
             ]);
 
             DB::commit();
 
-            // Redirect to the student list with success message
-            // The student will IMMEDIATELY appear in:
-            // 1. The Student Fee Management list (index)
-            // 2. The Create Assessment student dropdown (create)
             return redirect()
-                ->route('student-fees.index')
-                ->with('success', "Student {$user->name} (ID: {$user->student_id}) has been successfully added and is ready for assessment creation.");
+                ->route('student-fees.show', $user->id)
+                ->with('success', 'Student created successfully!');
 
         } catch (\Exception $e) {
             DB::rollBack();
-            
-            return back()
-                ->withInput()
-                ->withErrors(['error' => 'Failed to add student: ' . $e->getMessage()]);
+            return back()->withErrors([
+                'error' => 'Failed to create student: ' . $e->getMessage(),
+            ]);
         }
+    }
+
+
+    private function generateUniqueStudentId(): string
+    {
+        $year = now()->year;
+        
+        // Use database transaction to prevent race conditions
+        return DB::transaction(function () use ($year) {
+            // Lock the table to prevent concurrent ID generation
+            $lastStudent = User::where('student_id', 'like', "{$year}-%")
+                ->lockForUpdate()
+                ->orderByRaw('CAST(SUBSTRING(student_id, 6) AS UNSIGNED) DESC')
+                ->first();
+
+            if ($lastStudent) {
+                // Extract the number part and increment
+                $lastNumber = intval(substr($lastStudent->student_id, -4));
+                $newNumber = str_pad($lastNumber + 1, 4, '0', STR_PAD_LEFT);
+            } else {
+                $newNumber = '0001';
+            }
+
+            $newStudentId = "{$year}-{$newNumber}";
+            
+            // Double-check uniqueness
+            $attempts = 0;
+            while (User::where('student_id', $newStudentId)->exists() && $attempts < 10) {
+                $lastNumber = intval($newNumber);
+                $newNumber = str_pad($lastNumber + 1, 4, '0', STR_PAD_LEFT);
+                $newStudentId = "{$year}-{$newNumber}";
+                $attempts++;
+            }
+            
+            if ($attempts >= 10) {
+                throw new \Exception('Unable to generate unique student ID after multiple attempts.');
+            }
+            
+            return $newStudentId;
+        });
     }
 }
