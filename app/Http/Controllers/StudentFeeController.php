@@ -298,6 +298,7 @@ class StudentFeeController extends Controller
 
         return Inertia::render('StudentFees/Show', [
             'student' => $student,
+            'student_model_id' => $student->student->id ?? null,
             'assessment' => $latestAssessment,
             'transactions' => $transactions,
             'payments' => $payments,
@@ -499,7 +500,12 @@ class StudentFeeController extends Controller
                 'student_id' => $studentId,
                 'role' => 'student',
                 'status' => User::STATUS_ACTIVE,
-                'password' => Hash::make('password'), // Default password
+                'password' => Hash::make('password'),
+            ]);
+
+            // ✅ FIX: Create Student model entry
+            Student::create([
+                'user_id' => $user->id,
             ]);
 
             DB::commit();
@@ -515,7 +521,6 @@ class StudentFeeController extends Controller
             ]);
         }
     }
-
 
     private function generateUniqueStudentId(): string
     {

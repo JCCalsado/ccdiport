@@ -21,7 +21,18 @@ import {
     DialogTitle,
     DialogTrigger,
 } from '@/components/ui/dialog';
-import { ArrowLeft, Plus, Download, Calendar, CreditCard, FileText, DollarSign, Clock, CheckCircle } from 'lucide-vue-next';
+import {
+    ArrowLeft,
+    Plus,
+    Download,
+    Calendar,
+    CreditCard,
+    FileText,
+    DollarSign,
+    Clock,
+    CheckCircle,
+} from 'lucide-vue-next';
+
 import { ref, computed } from 'vue';
 
 interface Payment {
@@ -52,7 +63,7 @@ interface FeeBreakdown {
 }
 
 interface Student {
-    id: number;
+    id: number; // USER ID
     student_id: string;
     name: string;
     email: string;
@@ -80,6 +91,7 @@ interface Assessment {
 
 interface Props {
     student: Student;
+    student_model_id: number | null; // <-- Added correctly
     assessment: Assessment | null;
     transactions: Transaction[];
     payments: Payment[];
@@ -108,15 +120,24 @@ const remainingBalance = computed(() => {
 });
 
 const totalPaid = computed(() => {
-    return props.payments.reduce((sum, payment) => sum + parseFloat(String(payment.amount)), 0);
+    return props.payments.reduce(
+        (sum, payment) => sum + parseFloat(String(payment.amount)),
+        0
+    );
 });
 
 const hasOutstandingBalance = computed(() => {
     return (props.student.account?.balance ?? 0) < 0;
 });
 
+// ✅ FIXED: Using student_model_id, NOT student.id or student.student_id_actual
 const submitPayment = () => {
-    paymentForm.post(route('student-fees.payments.store', props.student.id), {
+    if (!props.student_model_id) {
+        console.error('Missing student_model_id! Payment cannot be recorded.');
+        return;
+    }
+
+    paymentForm.post(route('student-fees.payments.store', props.student_model_id), {
         preserveScroll: true,
         onSuccess: () => {
             showPaymentDialog.value = false;
@@ -156,26 +177,29 @@ const formatDateTime = (date: string) => {
 
 const getStatusColor = (status: string) => {
     const statusMap: Record<string, string> = {
-        'paid': 'bg-green-100 text-green-800',
-        'completed': 'bg-green-100 text-green-800',
-        'pending': 'bg-yellow-100 text-yellow-800',
-        'failed': 'bg-red-100 text-red-800',
-        'cancelled': 'bg-gray-100 text-gray-800',
+        paid: 'bg-green-100 text-green-800',
+        completed: 'bg-green-100 text-green-800',
+        pending: 'bg-yellow-100 text-yellow-800',
+        failed: 'bg-red-100 text-red-800',
+        cancelled: 'bg-gray-100 text-gray-800',
     };
+
     return statusMap[status.toLowerCase()] || 'bg-gray-100 text-gray-800';
 };
 
 const getPaymentMethodDisplay = (method: string) => {
-    const methodMap: Record<string, string> = {
-        'cash': 'Cash',
-        'gcash': 'GCash',
-        'bank_transfer': 'Bank Transfer',
-        'credit_card': 'Credit Card',
-        'debit_card': 'Debit Card',
+    const map: Record<string, string> = {
+        cash: 'Cash',
+        gcash: 'GCash',
+        bank_transfer: 'Bank Transfer',
+        credit_card: 'Credit Card',
+        debit_card: 'Debit Card',
     };
-    return methodMap[method] || method;
+
+    return map[method] || method;
 };
 
+// PDF export uses USER ID, not student_model_id
 const exportPDF = () => {
     window.open(route('student-fees.export-pdf', props.student.id), '_blank');
 };
