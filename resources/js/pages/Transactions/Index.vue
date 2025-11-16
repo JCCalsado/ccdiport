@@ -1,360 +1,356 @@
 <script setup lang="ts">
-import { ref, computed, type ComputedRef } from 'vue'
-import { Head } from '@inertiajs/vue3'
-import AppLayout from '@/layouts/AppLayout.vue'
-import Breadcrumbs from '@/components/Breadcrumbs.vue'
+import AppLayout from '@/layouts/AppLayout.vue';
+import Breadcrumbs from '@/components/Breadcrumbs.vue';
+import { Head, router } from '@inertiajs/vue3';
+import { ref, computed } from 'vue';
 
-/* --------------------------------------------------------------------------
- *  Types
- * -------------------------------------------------------------------------- */
-
-type Transaction = {
-  id: number
-  reference: string
-  amount: number
-  status: string
-  type: string // e.g. Prelim, Midterm, Finals
-  kind?: string // "charge" | "payment"
-  created_at: string
-  user?: { id: number; name: string }
-  meta?: { items?: { name: string; amount: number }[] }
+interface Transaction {
+    id: number;
+    reference: string;
+    user?: {
+        id: number;
+        name: string;
+        student_id: string;
+        email: string;
+    };
+    kind: 'charge' | 'payment';
+    type: string;
+    year: string;
+    semester: string;
+    amount: number;
+    status: string;
+    payment_channel?: string;
+    paid_at?: string;
+    created_at: string;
 }
 
-type TransactionsByTerm = Record<string, Transaction[]>
-
-/* --------------------------------------------------------------------------
- *  Props
- * -------------------------------------------------------------------------- */
-
-const props = defineProps<{
-  auth: { user: { id: number; name: string; email: string; role: string } }
-  transactionsByTerm: TransactionsByTerm
-  account?: { balance: number } | null
-  currentTerm: string
-}>()
-
-/* --------------------------------------------------------------------------
- *  Breadcrumbs
- * -------------------------------------------------------------------------- */
-
-const breadcrumbItems = [
-  { title: 'Dashboard', href: route('dashboard') },
-  { title: 'Transactions', href: route('transactions.index') },
-]
-
-/* --------------------------------------------------------------------------
- *  State
- * -------------------------------------------------------------------------- */
-
-const selectedTransaction = ref<Transaction | null>(null)
-const showModal = ref(false)
-const showPast = ref(false)
-
-/* --------------------------------------------------------------------------
- *  Modal Controls
- * -------------------------------------------------------------------------- */
-
-const openViewModal = (transaction: Transaction) => {
-  selectedTransaction.value = transaction
-  showModal.value = true
+interface TermSummary {
+    total_assessment: number;
+    total_paid: number;
+    current_balance: number;
 }
 
-const closeModal = () => (showModal.value = false)
-
-/* --------------------------------------------------------------------------
- *  Helpers
- * -------------------------------------------------------------------------- */
-
-const downloadPdf = (transactionId: number) => {
-  window.open(route('transactions.download', transactionId), '_blank')
+interface Props {
+    auth: {
+        user: {
+            id: number;
+            name: string;
+            role: string;
+        };
+    };
+    transactionsByTerm: Record<string, Transaction[]>;
+    account: {
+        balance: number;
+    };
+    currentTerm: string;
 }
 
-const payNow = (txn: Transaction) => {
-  window.location.href = route('transactions.payNow', { id: txn.id })
+const props = defineProps<Props>();
+
+const breadcrumbs = [
+    { title: 'Dashboard', href: route('dashboard') },
+    { title: 'Transaction History' },
+];
+
+const search = ref('');
+const expanded = ref<Record<string, boolean>>({});
+const showPastSemesters = ref(false);
+const selectedTransaction = ref<Transaction | null>(null);
+const showDetailsDialog = ref(false);
+
+const isStaff = computed(() => {
+    return ['admin', 'accounting'].includes(props.auth.user.role);
+});
+
+// Initialize first term as expanded
+if (props.currentTerm && props.transactionsByTerm[props.currentTerm]) {
+    expanded.value[props.currentTerm] = true;
 }
 
-/* --------------------------------------------------------------------------
- *  Computed Data
- * -------------------------------------------------------------------------- */
+const toggle = (key: string) => {
+    expanded.value[key] = !expanded.value[key];
+};
 
-// Compute term list as tuples [term, Transaction[]]
-const terms: ComputedRef<[string, Transaction[]][]> = computed(() => {
-  return Object.entries(props.transactionsByTerm) as [string, Transaction[]][]
-})
+// Calculate term summary
+const calculateTermSummary = (transactions: Transaction[]): TermSummary => {
+    const charges = transactions
+        .filter(t => t.kind === 'charge')
+        .reduce((sum, t) => sum + parseFloat(String(t.amount)), 0);
+    
+    const payments = transactions
+        .filter(t => t.kind === 'payment' && t.status === 'paid')
+        .reduce((sum, t) => sum + parseFloat(String(t.amount)), 0);
+    
+    return {
+        total_assessment: charges,
+        total_paid: payments,
+        current_balance: charges - payments,
+    };
+};
 
-// Compute balance per term
-const computeBalance = (transactions: Transaction[]) => {
-  const charges = transactions
-    .filter(tx => tx.kind === 'charge')
-    .reduce((sum, tx) => sum + Number(tx.amount), 0)
+// Filter transactions based on search
+const filteredTransactionsByTerm = computed(() => {
+    if (!search.value) return props.transactionsByTerm;
 
-  const payments = transactions
-    .filter(tx => tx.kind === 'payment' && tx.status === 'paid')
-    .reduce((sum, tx) => sum + Number(tx.amount), 0)
+    const searchLower = search.value.toLowerCase();
+    const filtered: Record<string, Transaction[]> = {};
 
-  return charges - payments
-}
+    Object.entries(props.transactionsByTerm).forEach(([term, transactions]) => {
+        const matchingTransactions = transactions.filter(txn => 
+            txn.reference.toLowerCase().includes(searchLower) ||
+            txn.type.toLowerCase().includes(searchLower) ||
+            txn.user?.name?.toLowerCase().includes(searchLower) ||
+            txn.user?.student_id?.toLowerCase().includes(searchLower)
+        );
 
-// Currency formatting helper
-const fmt = (n: number | undefined | null) =>
-  Number(n ?? 0).toLocaleString(undefined, {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  })
+        if (matchingTransactions.length > 0) {
+            filtered[term] = matchingTransactions;
+        }
+    });
+
+    return filtered;
+});
+
+const formatCurrency = (amount: number) => {
+    return new Intl.NumberFormat('en-PH', {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2,
+    }).format(amount);
+};
+
+const formatDate = (date: string) => {
+    return new Date(date).toLocaleDateString('en-US', {
+        year: 'numeric',
+        month: 'short',
+        day: 'numeric',
+    });
+};
+
+const downloadPDF = (termKey: string) => {
+    router.get(route('transactions.download', { term: termKey }), {}, { 
+        preserveScroll: true 
+    });
+};
+
+const viewTransaction = (transactionId: number) => {
+    router.visit(route('transactions.show', transactionId));
+};
+
+const payNow = (transaction: Transaction) => {
+    router.visit(route('student.account'));
+};
 </script>
 
 <template>
-  <AppLayout>
-    <Head title="Transactions" />
+    <Head title="Transaction History" />
 
-    <div class="w-full p-6">
-      <!-- Breadcrumbs -->
-      <Breadcrumbs :items="breadcrumbItems" />
+    <AppLayout>
+        <div class="space-y-6 max-w-7xl mx-auto p-6">
+            <Breadcrumbs :items="breadcrumbs" />
 
-      <!-- Header -->
-      <div class="flex items-center justify-between mb-6">
-        <h1 class="text-2xl font-bold">
-          {{ props.auth.user.name }}’s Transactions
-        </h1>
-      </div>
+            <!-- HEADER -->
+            <div class="flex items-center justify-between">
+                <div>
+                    <h1 class="text-3xl font-bold">Transaction History</h1>
+                    <p class="text-gray-500">View all your financial transactions by term</p>
+                </div>
+            </div>
 
-      <!-- ===========================
-           CURRENT TERM
-      ============================ -->
-      <div v-for="([term, transactions], idx) in terms" :key="term">
-        <div v-if="term === props.currentTerm" class="mb-6">
-          <div class="overflow-hidden rounded-xl shadow-md bg-white">
-            <table class="min-w-full text-sm">
-              <thead>
-                <tr class="bg-gray-50">
-                  <th colspan="6" class="px-4 py-3">
-                    <div class="flex items-center justify-between">
-                      <span class="font-semibold text-lg">{{ term }}</span>
-                      <span class="font-semibold text-lg text-blue-600">
-                        Balance: ₱{{ fmt(computeBalance(transactions)) }}
-                      </span>
-                    </div>
-                  </th>
-                </tr>
-                <tr class="bg-gray-100 text-left">
-                  <th class="px-4 py-2">Reference</th>
-                  <th class="px-4 py-2">Type</th>
-                  <th class="px-4 py-2">Amount</th>
-                  <th class="px-4 py-2">Status</th>
-                  <th class="px-4 py-2">Date</th>
-                  <th class="px-4 py-2 text-center">Actions</th>
-                </tr>
-              </thead>
-
-              <tbody>
-                <tr
-                  v-for="txn in transactions"
-                  :key="txn.id"
-                  class="border-t"
-                  :class="txn.status !== 'paid' ? 'bg-red-50' : ''"
+            <!-- Current Balance Card (Students only) -->
+            <div v-if="!isStaff" class="p-6 rounded-xl border bg-blue-50 shadow-sm">
+                <h2 class="font-semibold text-lg">Current Balance</h2>
+                <p class="text-gray-500">Your outstanding balance</p>
+                <p 
+                    class="text-4xl font-bold mt-2"
+                    :class="account.balance > 0 ? 'text-red-600' : 'text-green-600'"
                 >
-                  <td class="px-4 py-2">{{ txn.reference }}</td>
-                  <td class="px-4 py-2">{{ txn.type }}</td>
-                  <td class="px-4 py-2">₱{{ fmt(txn.amount) }}</td>
-                  <td class="px-4 py-2">
-                    <span
-                      :class="txn.status === 'paid'
-                        ? 'text-green-600 font-medium'
-                        : 'text-yellow-600 font-medium'"
-                    >
-                      {{ txn.status }}
-                    </span>
-                  </td>
-                  <td class="px-4 py-2">
-                    {{ new Date(txn.created_at).toLocaleDateString() }}
-                  </td>
-                  <td class="px-4 py-2 text-center">
-                    <div class="flex justify-center gap-2">
-                      <button
-                        class="px-3 py-1.5 text-xs rounded bg-blue-500 text-white hover:bg-blue-600"
-                        @click="openViewModal(txn)"
-                      >
-                        View
-                      </button>
-                      <button
-                        class="px-3 py-1.5 text-xs rounded bg-green-500 text-white hover:bg-green-600"
-                        @click="downloadPdf(txn.id)"
-                      >
-                        Download
-                      </button>
-                      <button
-                        v-if="txn.status !== 'paid'"
-                        class="px-3 py-1.5 text-xs rounded bg-red-500 text-white hover:bg-red-600"
-                        @click="payNow(txn)"
-                      >
-                        Pay Now
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-        </div>
-      </div>
+                    ₱{{ formatCurrency(Math.abs(account.balance)) }}
+                </p>
+            </div>
 
-      <!-- ===========================
-           SHOW PAST BUTTON
-      ============================ -->
-      <div class="mt-4 mb-4">
-        <button
-          v-if="terms.length > 1"
-          @click="showPast = !showPast"
-          class="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
-        >
-          {{ showPast ? 'Hide Past Semesters' : 'Show Past Semesters' }}
-        </button>
-      </div>
+            <!-- Search Bar (Admin + Accounting only) -->
+            <div v-if="isStaff" class="p-4 border rounded-xl shadow-sm bg-white">
+                <input
+                    v-model="search"
+                    type="text"
+                    class="w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none"
+                    placeholder="Search by reference, type, or student..."
+                />
+            </div>
 
-      <!-- ===========================
-           PAST SEMESTERS
-      ============================ -->
-      <div v-if="showPast" class="space-y-6">
-        <div
-          v-for="([term, transactions], idx) in terms"
-          :key="term"
-          v-if="term !== props.currentTerm"
-        >
-          <div class="overflow-hidden rounded-xl border bg-gray-50">
-            <table class="min-w-full text-sm">
-              <thead>
-                <tr class="bg-gray-100">
-                  <th colspan="6" class="px-4 py-3">
-                    <div class="flex items-center justify-between">
-                      <span class="font-semibold text-lg text-gray-800">
-                        {{ term }} — Past Semester
-                      </span>
-                      <span class="font-semibold text-lg text-gray-700">
-                        Balance: ₱{{ fmt(computeBalance(transactions)) }}
-                      </span>
-                    </div>
-                  </th>
-                </tr>
-                <tr class="bg-gray-200 text-left">
-                  <th class="px-4 py-2">Reference</th>
-                  <th class="px-4 py-2">Type</th>
-                  <th class="px-4 py-2">Amount</th>
-                  <th class="px-4 py-2">Status</th>
-                  <th class="px-4 py-2">Date</th>
-                  <th class="px-4 py-2 text-center">Actions</th>
-                </tr>
-              </thead>
+            <!-- No Results -->
+            <div v-if="Object.keys(filteredTransactionsByTerm).length === 0" class="text-center py-12">
+                <p class="text-gray-500 text-lg">No transactions found</p>
+                <p class="text-sm text-gray-400 mt-2">Try adjusting your search criteria</p>
+            </div>
 
-              <tbody>
-                <tr
-                  v-for="txn in transactions"
-                  :key="txn.id"
-                  class="border-t"
-                  :class="txn.status !== 'paid' ? 'bg-red-50' : ''"
-                >
-                  <td class="px-4 py-2">{{ txn.reference }}</td>
-                  <td class="px-4 py-2">{{ txn.type }}</td>
-                  <td class="px-4 py-2">₱{{ fmt(txn.amount) }}</td>
-                  <td class="px-4 py-2">
-                    <span
-                      :class="txn.status === 'paid'
-                        ? 'text-green-600 font-medium'
-                        : 'text-yellow-600 font-medium'"
-                    >
-                      {{ txn.status }}
-                    </span>
-                  </td>
-                  <td class="px-4 py-2">
-                    {{ new Date(txn.created_at).toLocaleDateString() }}
-                  </td>
-                  <td class="px-4 py-2 text-center">
-                    <div class="flex justify-center gap-2">
-                      <button
-                        class="px-3 py-1.5 text-xs rounded bg-blue-500 text-white hover:bg-blue-600"
-                        @click="openViewModal(txn)"
-                      >
-                        View
-                      </button>
-                      <button
-                        class="px-3 py-1.5 text-xs rounded bg-green-500 text-white hover:bg-green-600"
-                        @click="downloadPdf(txn.id)"
-                      >
-                        Download
-                      </button>
-                      <button
-                        v-if="txn.status !== 'paid'"
-                        class="px-3 py-1.5 text-xs rounded bg-red-500 text-white hover:bg-red-600"
-                        @click="payNow(txn)"
-                      >
-                        Pay Now
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <!-- ===========================
-         TRANSACTION MODAL
-    ============================ -->
-    <div
-      v-if="showModal && selectedTransaction"
-      class="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
-    >
-      <div class="bg-white rounded-lg shadow-lg p-6 w-full max-w-md relative">
-        <h2 class="text-lg font-bold mb-4">Transaction Details</h2>
-
-        <p>
-          <strong>Reference:</strong>
-          {{ selectedTransaction.reference }}
-        </p>
-        <p>
-          <strong>Type / Category:</strong>
-          {{ selectedTransaction.type }}
-        </p>
-
-        <div
-          v-if="selectedTransaction.meta?.items?.length"
-          class="mt-3"
-        >
-          <p class="mt-2 font-semibold">Breakdown</p>
-          <ul class="list-disc ml-5 text-sm">
-            <li
-              v-for="(it, idx) in selectedTransaction.meta.items"
-              :key="idx"
+            <!-- TERMS -->
+            <div 
+                v-for="(transactions, termKey) in filteredTransactionsByTerm" 
+                :key="termKey" 
+                class="border rounded-xl shadow-sm bg-white overflow-hidden"
             >
-              {{ it.name }} — ₱{{
-                Number(it.amount).toLocaleString(undefined, {
-                  minimumFractionDigits: 2,
-                  maximumFractionDigits: 2,
-                })
-              }}
-            </li>
-          </ul>
-        </div>
+                <!-- Summary Header -->
+                <div
+                    class="flex justify-between items-center p-5 cursor-pointer hover:bg-gray-50 transition-colors"
+                    @click="toggle(termKey)"
+                >
+                    <div>
+                        <div class="flex items-center gap-3">
+                            <h2 class="font-bold text-xl">{{ termKey }}</h2>
+                            <span 
+                                v-if="termKey === currentTerm"
+                                class="px-2 py-1 text-xs font-semibold rounded-full bg-blue-100 text-blue-800"
+                            >
+                                Current
+                            </span>
+                        </div>
+                        <p class="text-gray-500 mt-1">{{ transactions.length }} transaction{{ transactions.length !== 1 ? 's' : '' }}</p>
+                    </div>
 
-        <p class="mt-2">
-          <strong>Amount:</strong> ₱{{ fmt(selectedTransaction.amount) }}
-        </p>
-        <p><strong>Status:</strong> {{ selectedTransaction.status }}</p>
-        <p>
-          <strong>Date:</strong>
-          {{ new Date(selectedTransaction.created_at).toLocaleString() }}
-        </p>
+                    <!-- Summary Row -->
+                    <div class="flex items-center gap-14 text-right">
+                        <div>
+                            <p class="text-sm text-gray-500">Total Assessment Fee</p>
+                            <p class="text-red-600 font-bold">
+                                ₱{{ formatCurrency(calculateTermSummary(transactions).total_assessment) }}
+                            </p>
+                        </div>
 
-        <div class="mt-6 flex justify-end">
-          <button
-            class="px-4 py-2 bg-gray-500 text-white rounded hover:bg-gray-600"
-            @click="closeModal"
-          >
-            Close
-          </button>
+                        <div>
+                            <p class="text-sm text-gray-500">Total Paid</p>
+                            <p class="text-green-600 font-bold">
+                                ₱{{ formatCurrency(calculateTermSummary(transactions).total_paid) }}
+                            </p>
+                        </div>
+
+                        <div>
+                            <p class="text-sm text-gray-500">Current Balance</p>
+                            <p 
+                                class="font-bold"
+                                :class="calculateTermSummary(transactions).current_balance > 0 ? 'text-red-600' : 'text-green-600'"
+                            >
+                                ₱{{ formatCurrency(Math.abs(calculateTermSummary(transactions).current_balance)) }}
+                            </p>
+                        </div>
+
+                        <!-- Download PDF for this term -->
+                        <button
+                            class="px-4 py-2 bg-gray-100 hover:bg-gray-200 rounded-lg border text-sm transition-colors"
+                            @click.stop="downloadPDF(termKey)"
+                        >
+                            Download PDF
+                        </button>
+
+                        <div>
+                            <svg
+                                :class="expanded[termKey] ? 'rotate-180' : ''"
+                                xmlns="http://www.w3.org/2000/svg"
+                                class="h-6 w-6 transition-transform"
+                                fill="none" 
+                                viewBox="0 0 24 24" 
+                                stroke="currentColor"
+                            >
+                                <path 
+                                    stroke-linecap="round" 
+                                    stroke-linejoin="round" 
+                                    stroke-width="2"
+                                    d="M19 9l-7 7-7-7"
+                                />
+                            </svg>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Expanded Table -->
+                <div v-if="expanded[termKey]" class="p-5 border-t">
+                    <div class="overflow-x-auto">
+                        <table class="w-full text-left border-collapse">
+                            <thead>
+                                <tr class="bg-gray-100 text-gray-600 text-sm">
+                                    <th class="p-3 font-medium">Reference</th>
+                                    <th v-if="isStaff" class="p-3 font-medium">Student</th>
+                                    <th class="p-3 font-medium">Type</th>
+                                    <th class="p-3 font-medium">Category</th>
+                                    <th class="p-3 font-medium">Amount</th>
+                                    <th class="p-3 font-medium">Status</th>
+                                    <th class="p-3 font-medium">Date</th>
+                                    <th class="p-3 font-medium">Actions</th>
+                                </tr>
+                            </thead>
+
+                            <tbody>
+                                <tr
+                                    v-for="t in transactions"
+                                    :key="t.id"
+                                    class="border-b hover:bg-gray-50 transition-colors"
+                                >
+                                    <td class="p-3 font-mono text-sm">{{ t.reference }}</td>
+                                    <td v-if="isStaff" class="p-3 text-sm">
+                                        <div>
+                                            <p class="font-medium">{{ t.user?.name }}</p>
+                                            <p class="text-xs text-gray-500">{{ t.user?.student_id }}</p>
+                                        </div>
+                                    </td>
+                                    <td class="p-3">
+                                        <span 
+                                            class="px-2 py-1 text-xs font-semibold rounded-full"
+                                            :class="t.kind === 'charge' 
+                                                ? 'bg-red-100 text-red-800' 
+                                                : 'bg-green-100 text-green-800'"
+                                        >
+                                            {{ t.kind }}
+                                        </span>
+                                    </td>
+                                    <td class="p-3 text-sm">{{ t.type }}</td>
+                                    <td 
+                                        class="p-3 font-semibold"
+                                        :class="t.kind === 'charge' ? 'text-red-600' : 'text-green-600'"
+                                    >
+                                        {{ t.kind === 'charge' ? '+' : '-' }}₱{{ formatCurrency(t.amount) }}
+                                    </td>
+                                    <td class="p-3">
+                                        <span 
+                                            class="px-2 py-1 text-xs font-semibold rounded-full"
+                                            :class="{
+                                                'bg-green-100 text-green-800': t.status === 'paid',
+                                                'bg-yellow-100 text-yellow-800': t.status === 'pending',
+                                                'bg-red-100 text-red-800': t.status === 'failed',
+                                                'bg-gray-100 text-gray-800': t.status === 'cancelled'
+                                            }"
+                                        >
+                                            {{ t.status }}
+                                        </span>
+                                    </td>
+                                    <td class="p-3 text-sm text-gray-600">{{ formatDate(t.created_at) }}</td>
+                                    <td class="p-3 flex gap-2">
+                                        <button 
+                                            v-if="isStaff"
+                                            @click="viewTransaction(t.id)"
+                                            class="px-3 py-1 text-sm bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
+                                        >
+                                            View
+                                        </button>
+                                        <button 
+                                            @click="downloadPDF(termKey)"
+                                            class="px-3 py-1 text-sm bg-green-600 hover:bg-green-700 text-white rounded-lg transition-colors"
+                                        >
+                                            Download
+                                        </button>
+                                        <button 
+                                            v-if="t.status === 'pending' && t.kind === 'charge' && !isStaff"
+                                            @click="payNow(t)"
+                                            class="px-3 py-1 text-sm bg-red-600 hover:bg-red-700 text-white rounded-lg transition-colors"
+                                        >
+                                            Pay Now
+                                        </button>
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
         </div>
-      </div>
-    </div>
-  </AppLayout>
+    </AppLayout>
 </template>

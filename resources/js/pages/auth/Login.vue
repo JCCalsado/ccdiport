@@ -10,7 +10,7 @@ import AuthBase from '@/layouts/AuthLayout.vue';
 import { register } from '@/routes';
 import { request } from '@/routes/password';
 import { Form, Head } from '@inertiajs/vue3';
-import { LoaderCircle, User, Briefcase, GraduationCap, ArrowLeft } from 'lucide-vue-next';
+import { LoaderCircle, User, Briefcase, GraduationCap, ArrowLeft, Eye, EyeOff } from 'lucide-vue-next';
 import { ref } from 'vue';
 
 defineProps<{
@@ -19,6 +19,7 @@ defineProps<{
 }>();
 
 const selectedRole = ref<'admin' | 'accounting' | 'student' | null>(null);
+const showPassword = ref(false);
 
 const roleOptions = [
     { 
@@ -53,10 +54,15 @@ const selectRole = (role: 'admin' | 'accounting' | 'student') => {
 
 const backToRoleSelection = () => {
     selectedRole.value = null;
+    showPassword.value = false;
 };
 
 const getCurrentRole = () => {
     return roleOptions.find(r => r.value === selectedRole.value);
+};
+
+const togglePasswordVisibility = () => {
+    showPassword.value = !showPassword.value;
 };
 </script>
 
@@ -167,15 +173,28 @@ const getCurrentRole = () => {
                                 Forgot password?
                             </TextLink>
                         </div>
-                        <Input
-                            id="password"
-                            type="password"
-                            name="password"
-                            required
-                            :tabindex="2"
-                            autocomplete="current-password"
-                            placeholder="Password"
-                        />
+                        <div class="relative">
+                            <Input
+                                id="password"
+                                :type="showPassword ? 'text' : 'password'"
+                                name="password"
+                                required
+                                :tabindex="2"
+                                autocomplete="current-password"
+                                placeholder="Password"
+                                class="pr-10"
+                            />
+                            <button
+                                type="button"
+                                @click="togglePasswordVisibility"
+                                class="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-700 transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 rounded-sm"
+                                :tabindex="-1"
+                                :aria-label="showPassword ? 'Hide password' : 'Show password'"
+                            >
+                                <Eye v-if="!showPassword" :size="18" class="transition-opacity" />
+                                <EyeOff v-else :size="18" class="transition-opacity" />
+                            </button>
+                        </div>
                         <InputError :message="errors.password" />
                     </div>
 
