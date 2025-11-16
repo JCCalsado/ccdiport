@@ -315,17 +315,20 @@ class StudentFeeController extends Controller
             'amount' => 'required|numeric|min:0.01',
             'payment_method' => 'required|string|in:cash,gcash,bank_transfer,credit_card,debit_card',
             'description' => 'nullable|string|max:255',
-            'payment_date' => 'nullable|date',
+            'payment_date' => 'required|date',
         ]);
 
         $student = User::with('student')->where('role', 'student')->findOrFail($userId);
 
+        // Ensure student has a student record
         if (!$student->student) {
-            return back()->withErrors(['error' => 'Student record not found.']);
+            return back()->withErrors(['error' => 'Student record not found. Please contact administrator.']);
         }
 
         DB::beginTransaction();
         try {
+            $paymentDate = $validated['payment_date'] ?? now();
+
             // Create payment record
             $payment = Payment::create([
                 'student_id' => $student->student->id,
@@ -334,7 +337,7 @@ class StudentFeeController extends Controller
                 'reference_number' => 'PAY-' . strtoupper(Str::random(10)),
                 'description' => $validated['description'] ?? 'Payment',
                 'status' => Payment::STATUS_COMPLETED,
-                'paid_at' => $validated['payment_date'] ?? now(),
+                'paid_at' => $paymentDate,
             ]);
 
             // Create transaction record
@@ -346,7 +349,7 @@ class StudentFeeController extends Controller
                 'type' => 'Payment',
                 'amount' => $validated['amount'],
                 'status' => 'paid',
-                'paid_at' => $payment->paid_at,
+                'paid_at' => $paymentDate,
                 'meta' => [
                     'payment_id' => $payment->id,
                     'description' => $validated['description'] ?? 'Payment',
@@ -362,7 +365,15 @@ class StudentFeeController extends Controller
 
         } catch (\Exception $e) {
             DB::rollBack();
-            return back()->withErrors(['error' => 'Failed to record payment: ' . $e->getMessage()]);
+            \Log::error('Payment recording failed', [
+                'user_id' => $userId,
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+            
+            return back()->withErrors([
+                'error' => 'Failed to record payment. Please try again or contact support.'
+            ]);
         }
     }
 
