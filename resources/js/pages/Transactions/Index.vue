@@ -2,6 +2,8 @@
 import AppLayout from '@/layouts/AppLayout.vue';
 import Breadcrumbs from '@/components/Breadcrumbs.vue';
 import { Head, router } from '@inertiajs/vue3';
+import { Button } from '@/components/ui/button';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { ref, computed } from 'vue';
 
 interface Transaction {
@@ -63,9 +65,14 @@ const isStaff = computed(() => {
 });
 
 // Initialize first term as expanded
-if (props.currentTerm && props.transactionsByTerm[props.currentTerm]) {
+if (props.currentTerm && props.transactionsByTerm && props.transactionsByTerm[props.currentTerm]) {
     expanded.value[props.currentTerm] = true;
 }
+
+// Count total terms
+const totalTermsCount = computed(() => {
+    return props.transactionsByTerm ? Object.keys(props.transactionsByTerm).length : 0;
+});
 
 const toggle = (key: string) => {
     expanded.value[key] = !expanded.value[key];
@@ -73,13 +80,21 @@ const toggle = (key: string) => {
 
 // Calculate term summary
 const calculateTermSummary = (transactions: Transaction[]): TermSummary => {
+    if (!transactions || !Array.isArray(transactions)) {
+        return {
+            total_assessment: 0,
+            total_paid: 0,
+            current_balance: 0,
+        };
+    }
+    
     const charges = transactions
-        .filter(t => t.kind === 'charge')
-        .reduce((sum, t) => sum + parseFloat(String(t.amount)), 0);
+        .filter(t => t && t.kind === 'charge')
+        .reduce((sum, t) => sum + parseFloat(String(t.amount || 0)), 0);
     
     const payments = transactions
-        .filter(t => t.kind === 'payment' && t.status === 'paid')
-        .reduce((sum, t) => sum + parseFloat(String(t.amount)), 0);
+        .filter(t => t && t.kind === 'payment' && t.status === 'paid')
+        .reduce((sum, t) => sum + parseFloat(String(t.amount || 0)), 0);
     
     return {
         total_assessment: charges,
@@ -88,17 +103,28 @@ const calculateTermSummary = (transactions: Transaction[]): TermSummary => {
     };
 };
 
-// Filter transactions based on search
+// Filter transactions based on search and past semesters visibility
 const filteredTransactionsByTerm = computed(() => {
-    if (!search.value) return props.transactionsByTerm;
+    if (!props.transactionsByTerm) return {};
+    
+    let terms = props.transactionsByTerm;
+
+    // Filter out past semesters if not showing them
+    if (!showPastSemesters.value && props.currentTerm && terms[props.currentTerm]) {
+        terms = { [props.currentTerm]: terms[props.currentTerm] };
+    }
+
+    if (!search.value) return terms;
 
     const searchLower = search.value.toLowerCase();
     const filtered: Record<string, Transaction[]> = {};
 
-    Object.entries(props.transactionsByTerm).forEach(([term, transactions]) => {
+    Object.entries(terms).forEach(([term, transactions]) => {
+        if (!transactions || !Array.isArray(transactions)) return;
+        
         const matchingTransactions = transactions.filter(txn => 
-            txn.reference.toLowerCase().includes(searchLower) ||
-            txn.type.toLowerCase().includes(searchLower) ||
+            txn.reference?.toLowerCase().includes(searchLower) ||
+            txn.type?.toLowerCase().includes(searchLower) ||
             txn.user?.name?.toLowerCase().includes(searchLower) ||
             txn.user?.student_id?.toLowerCase().includes(searchLower)
         );
@@ -132,8 +158,14 @@ const downloadPDF = (termKey: string) => {
     });
 };
 
-const viewTransaction = (transactionId: number) => {
-    router.visit(route('transactions.show', transactionId));
+const viewTransaction = (transaction: Transaction) => {
+    selectedTransaction.value = transaction;
+    showDetailsDialog.value = true;
+};
+
+const closeDetailsDialog = () => {
+    showDetailsDialog.value = false;
+    selectedTransaction.value = null;
 };
 
 const payNow = (transaction: Transaction) => {
@@ -154,17 +186,24 @@ const payNow = (transaction: Transaction) => {
                     <h1 class="text-3xl font-bold">Transaction History</h1>
                     <p class="text-gray-500">View all your financial transactions by term</p>
                 </div>
+                <Button 
+                    v-if="totalTermsCount > 1"
+                    variant="outline"
+                    @click="showPastSemesters = !showPastSemesters"
+                >
+                    {{ showPastSemesters ? 'Hide Past Semesters' : 'Show Past Semesters' }}
+                </Button>
             </div>
 
             <!-- Current Balance Card (Students only) -->
-            <div v-if="!isStaff" class="p-6 rounded-xl border bg-blue-50 shadow-sm">
+            <div v-if="!isStaff && account" class="p-6 rounded-xl border bg-blue-50 shadow-sm">
                 <h2 class="font-semibold text-lg">Current Balance</h2>
                 <p class="text-gray-500">Your outstanding balance</p>
                 <p 
                     class="text-4xl font-bold mt-2"
-                    :class="account.balance > 0 ? 'text-red-600' : 'text-green-600'"
+                    :class="(account.balance || 0) > 0 ? 'text-red-600' : 'text-green-600'"
                 >
-                    ₱{{ formatCurrency(Math.abs(account.balance)) }}
+                    ₱{{ formatCurrency(Math.abs(account.balance || 0)) }}
                 </p>
             </div>
 
@@ -325,8 +364,7 @@ const payNow = (transaction: Transaction) => {
                                     <td class="p-3 text-sm text-gray-600">{{ formatDate(t.created_at) }}</td>
                                     <td class="p-3 flex gap-2">
                                         <button 
-                                            v-if="isStaff"
-                                            @click="viewTransaction(t.id)"
+                                            @click="viewTransaction(t)"
                                             class="px-3 py-1 text-sm bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
                                         >
                                             View
@@ -351,6 +389,139 @@ const payNow = (transaction: Transaction) => {
                     </div>
                 </div>
             </div>
+
+            <!-- Transaction Details Dialog -->
+            <Dialog v-model:open="showDetailsDialog">
+                <DialogContent class="max-w-2xl max-h-[80vh] overflow-y-auto">
+                    <DialogHeader>
+                        <DialogTitle>Transaction Details</DialogTitle>
+                        <DialogDescription>
+                            Complete information about this transaction
+                        </DialogDescription>
+                    </DialogHeader>
+
+                    <div v-if="selectedTransaction" class="space-y-6">
+                        <!-- Basic Information -->
+                        <div class="space-y-4">
+                            <h3 class="font-semibold text-lg border-b pb-2">Basic Information</h3>
+                            <div class="grid grid-cols-2 gap-4">
+                                <div>
+                                    <p class="text-sm text-gray-600">Reference Number</p>
+                                    <p class="font-mono font-medium">{{ selectedTransaction.reference }}</p>
+                                </div>
+                                <div>
+                                    <p class="text-sm text-gray-600">Date</p>
+                                    <p class="font-medium">{{ formatDate(selectedTransaction.created_at) }}</p>
+                                </div>
+                                <div>
+                                    <p class="text-sm text-gray-600">Transaction Type</p>
+                                    <span 
+                                        class="inline-block px-2 py-1 text-xs font-semibold rounded-full"
+                                        :class="selectedTransaction.kind === 'charge' 
+                                            ? 'bg-red-100 text-red-800' 
+                                            : 'bg-green-100 text-green-800'"
+                                    >
+                                        {{ selectedTransaction.kind }}
+                                    </span>
+                                </div>
+                                <div>
+                                    <p class="text-sm text-gray-600">Status</p>
+                                    <span 
+                                        class="inline-block px-2 py-1 text-xs font-semibold rounded-full"
+                                        :class="{
+                                            'bg-green-100 text-green-800': selectedTransaction.status === 'paid',
+                                            'bg-yellow-100 text-yellow-800': selectedTransaction.status === 'pending',
+                                            'bg-red-100 text-red-800': selectedTransaction.status === 'failed',
+                                            'bg-gray-100 text-gray-800': selectedTransaction.status === 'cancelled'
+                                        }"
+                                    >
+                                        {{ selectedTransaction.status }}
+                                    </span>
+                                </div>
+                                <div>
+                                    <p class="text-sm text-gray-600">Category</p>
+                                    <p class="font-medium">{{ selectedTransaction.type }}</p>
+                                </div>
+                                <div>
+                                    <p class="text-sm text-gray-600">Amount</p>
+                                    <p 
+                                        class="text-xl font-bold"
+                                        :class="selectedTransaction.kind === 'charge' ? 'text-red-600' : 'text-green-600'"
+                                    >
+                                        {{ selectedTransaction.kind === 'charge' ? '+' : '-' }}₱{{ formatCurrency(selectedTransaction.amount) }}
+                                    </p>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Student Information (for staff) -->
+                        <div v-if="isStaff && selectedTransaction.user" class="space-y-4">
+                            <h3 class="font-semibold text-lg border-b pb-2">Student Information</h3>
+                            <div class="grid grid-cols-2 gap-4">
+                                <div>
+                                    <p class="text-sm text-gray-600">Student Name</p>
+                                    <p class="font-medium">{{ selectedTransaction.user.name }}</p>
+                                </div>
+                                <div>
+                                    <p class="text-sm text-gray-600">Student ID</p>
+                                    <p class="font-medium">{{ selectedTransaction.user.student_id }}</p>
+                                </div>
+                                <div>
+                                    <p class="text-sm text-gray-600">Email</p>
+                                    <p class="font-medium">{{ selectedTransaction.user.email }}</p>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Payment Information (if payment) -->
+                        <div v-if="selectedTransaction.kind === 'payment'" class="space-y-4">
+                            <h3 class="font-semibold text-lg border-b pb-2">Payment Information</h3>
+                            <div class="grid grid-cols-2 gap-4">
+                                <div>
+                                    <p class="text-sm text-gray-600">Payment Method</p>
+                                    <p class="font-medium capitalize">{{ selectedTransaction.payment_channel || 'N/A' }}</p>
+                                </div>
+                                <div>
+                                    <p class="text-sm text-gray-600">Payment Date</p>
+                                    <p class="font-medium">{{ selectedTransaction.paid_at ? formatDate(selectedTransaction.paid_at) : 'N/A' }}</p>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Fee Breakdown (if charge with metadata) -->
+                        <div v-if="selectedTransaction.kind === 'charge'" class="space-y-4">
+                            <h3 class="font-semibold text-lg border-b pb-2">Fee Breakdown</h3>
+                            <div class="bg-gray-50 rounded-lg p-4 space-y-3">
+                                <div class="flex justify-between items-center">
+                                    <span class="text-gray-700">{{ selectedTransaction.type }}</span>
+                                    <span class="font-semibold">₱{{ formatCurrency(selectedTransaction.amount) }}</span>
+                                </div>
+                                <div v-if="selectedTransaction.year && selectedTransaction.semester" class="text-sm text-gray-600 pt-2 border-t">
+                                    <p>Academic Year: {{ selectedTransaction.year }}</p>
+                                    <p>Semester: {{ selectedTransaction.semester }}</p>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Action Buttons -->
+                        <div class="flex justify-end gap-3 pt-4 border-t">
+                            <Button variant="outline" @click="closeDetailsDialog">
+                                Close
+                            </Button>
+                            <Button @click="downloadPDF(`${selectedTransaction.year} ${selectedTransaction.semester}`)">
+                                Download PDF
+                            </Button>
+                            <Button 
+                                v-if="selectedTransaction.status === 'pending' && selectedTransaction.kind === 'charge' && !isStaff"
+                                variant="destructive"
+                                @click="payNow(selectedTransaction); closeDetailsDialog()"
+                            >
+                                Pay Now
+                            </Button>
+                        </div>
+                    </div>
+                </DialogContent>
+            </Dialog>
         </div>
     </AppLayout>
 </template>
