@@ -169,7 +169,14 @@ const closeDetailsDialog = () => {
 };
 
 const payNow = (transaction: Transaction) => {
-    router.visit(route('student.account'));
+    // Navigate to student account with payment data in URL params
+    router.visit(route('student.account', {
+        pay: 'true',
+        transaction_id: transaction.id,
+        reference: transaction.reference,
+        amount: transaction.amount,
+        category: transaction.type
+    }));
 };
 </script>
 
