@@ -3,7 +3,7 @@ import tailwindcss from '@tailwindcss/vite';
 import vue from '@vitejs/plugin-vue';
 import laravel from 'laravel-vite-plugin';
 import { defineConfig } from 'vite';
-import { ZiggyVue } from 'ziggy-js';
+import path from 'path';
 
 export default defineConfig({
     plugins: [
@@ -27,8 +27,9 @@ export default defineConfig({
     ],
     resolve: {
         alias: {
-            '@': '/resources/js',
-            'ziggy-js': 'ziggy-js', // Ensure ziggy is properly resolved
+            '@': path.resolve(__dirname, 'resources/js'),
+            '@types': path.resolve(__dirname, 'resources/js/types'),
+            'ziggy-js': 'ziggy-js',
         },
     },
 });

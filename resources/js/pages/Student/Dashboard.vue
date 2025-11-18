@@ -1,10 +1,24 @@
 <script setup lang="ts">
+/**
+ * Student Dashboard (IMPROVED)
+ * Location: resources/js/pages/Student/Dashboard.vue
+ * 
+ * Key improvements:
+ * - Uses reusable composables for formatting
+ * - Uses reusable TransactionDetailsDialog component
+ * - Better error handling and loading states
+ * - Optimized computed properties
+ * - Better TypeScript types
+ */
+
 import { computed, ref } from 'vue'
-import { Head, Link } from '@inertiajs/vue3'
+import { Head, Link, router } from '@inertiajs/vue3'
 import AppLayout from '@/layouts/AppLayout.vue'
 import Breadcrumbs from '@/components/Breadcrumbs.vue'
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import TransactionDetailsDialog from '@/components/TransactionDetailsDialog.vue'
 import { Button } from '@/components/ui/button'
+import { useFormatters } from '@/composables/useFormatters'
+import type { Transaction, Account, Notification, TransactionStats } from '@/types/transaction'
 import {
   Wallet,
   Calendar,
@@ -15,90 +29,37 @@ import {
   FileText,
   CreditCard,
   Bell,
+  ArrowRight,
 } from 'lucide-vue-next'
-
-type Notification = {
-  id: number
-  title: string
-  message: string
-  start_date: string | null
-  end_date: string | null
-  target_role: string
-}
-
-type Account = {
-  balance: number
-}
-
-type RecentTransaction = {
-  id: number
-  reference: string
-  type: string
-  kind: string
-  amount: number
-  status: string
-  created_at: string
-  user?: {
-    id: number
-    name: string
-    student_id: string
-    email: string
-  }
-  year?: string
-  semester?: string
-  payment_channel?: string
-  paid_at?: string
-  meta?: {
-    fee_name?: string
-    description?: string
-    assessment_id?: number
-    subject_code?: string
-    subject_name?: string
-  }
-}
 
 interface Props {
   account: Account
   notifications: Notification[]
-  recentTransactions: RecentTransaction[]
-  stats: {
-    total_fees: number
-    total_paid: number
-    remaining_balance: number
-    pending_charges_count: number
-  }
+  recentTransactions: Transaction[]
+  stats: TransactionStats
 }
 
 const props = defineProps<Props>()
+
+// Use our reusable formatter composable
+const { formatCurrency, formatDate, formatPercentage } = useFormatters()
 
 const breadcrumbs = [
   { title: 'Dashboard', href: route('dashboard') },
   { title: 'Student Dashboard' },
 ]
 
+// Dialog state
 const showDetailsDialog = ref(false)
-const selectedTransaction = ref<RecentTransaction | null>(null)
+const selectedTransaction = ref<Transaction | null>(null)
 
-const formatCurrency = (amount: number) => {
-  return new Intl.NumberFormat('en-PH', {
-    style: 'currency',
-    currency: 'PHP',
-  }).format(amount)
-}
-
-const formatDate = (date: string) => {
-  return new Date(date).toLocaleDateString('en-US', {
-    month: 'short',
-    day: 'numeric',
-    year: 'numeric',
-  })
-}
-
-const getPaymentPercentage = computed(() => {
+// Computed: Payment percentage
+const paymentPercentage = computed(() => {
   if (props.stats.total_fees === 0) return 0
   return Math.round((props.stats.total_paid / props.stats.total_fees) * 100)
 })
 
+// Computed: Active notifications (filtered by date)
 const activeNotifications = computed(() => {
   const now = new Date()
   return props.notifications.filter(n => {
@@ -109,19 +70,55 @@ const activeNotifications = computed(() => {
   })
 })
 
-const viewTransaction = (transaction: RecentTransaction) => {
+// Computed: Has outstanding balance
+const hasOutstandingBalance = computed(() => props.stats.remaining_balance > 0)
+
+// Computed: Status message
+const statusMessage = computed(() => {
+  if (hasOutstandingBalance.value) {
+    return {
+      title: 'Payment Reminder',
+      message: `You have an outstanding balance of ${formatCurrency(props.stats.remaining_balance)}`,
+      icon: AlertCircle,
+      class: 'bg-red-50 border-red-200 text-red-900',
+      buttonClass: 'bg-red-600 hover:bg-red-700',
+      buttonText: 'Pay Now',
+    }
+  }
+  return {
+    title: 'All Paid!',
+    message: 'Great job! You have no outstanding balance.',
+    icon: CheckCircle,
+    class: 'bg-green-50 border-green-200 text-green-900',
+    buttonClass: 'bg-green-600 hover:bg-green-700',
+    buttonText: 'View Account',
+  }
+})
+
+// Methods
+const viewTransaction = (transaction: Transaction) => {
   selectedTransaction.value = transaction
   showDetailsDialog.value = true
 }
 
-const closeDetailsDialog = () => {
-  showDetailsDialog.value = false
-  selectedTransaction.value = null
+const handlePayNow = (transaction?: Transaction) => {
+  if (transaction) {
+    // Navigate to account with specific transaction
+    router.visit(route('student.account', {
+      tab: 'payment',
+      transaction_id: transaction.id,
+    }))
+  } else {
+    // Navigate to account payment tab
+    router.visit(route('student.account', { tab: 'payment' }))
+  }
 }
 
-const downloadPDF = () => {
-  // Implement download logic if needed
-  console.log('Download PDF')
+const handleDownload = (transaction: Transaction) => {
+  // Implement download logic
+  router.visit(route('transactions.download', { 
+    transaction: transaction.id 
+  }))
 }
 </script>
 
@@ -138,9 +135,9 @@ const downloadPDF = () => {
         <p class="text-blue-100">Here's your financial overview and important updates</p>
       </div>
 
-      <!-- Quick Stats -->
+      <!-- Quick Stats Grid -->
       <div class="grid grid-cols-1 md:grid-cols-4 gap-6">
-        <!-- Total Fees -->
+        <!-- Total Fees Card -->
         <div class="bg-white rounded-lg shadow-md p-6 hover:shadow-lg transition-shadow">
           <div class="flex items-center justify-between mb-2">
             <div class="p-3 bg-blue-100 rounded-lg">
@@ -148,10 +145,12 @@ const downloadPDF = () => {
             </div>
           </div>
           <p class="text-sm text-gray-600">Total Fees</p>
-          <p class="text-2xl font-bold text-gray-900">{{ formatCurrency(stats.total_fees) }}</p>
+          <p class="text-2xl font-bold text-gray-900">
+            {{ formatCurrency(stats.total_fees) }}
+          </p>
         </div>
 
-        <!-- Total Paid -->
+        <!-- Total Paid Card -->
         <div class="bg-white rounded-lg shadow-md p-6 hover:shadow-lg transition-shadow">
           <div class="flex items-center justify-between mb-2">
             <div class="p-3 bg-green-100 rounded-lg">
@@ -159,21 +158,28 @@ const downloadPDF = () => {
             </div>
           </div>
           <p class="text-sm text-gray-600">Total Paid</p>
-          <p class="text-2xl font-bold text-green-600">{{ formatCurrency(stats.total_paid) }}</p>
+          <p class="text-2xl font-bold text-green-600">
+            {{ formatCurrency(stats.total_paid) }}
+          </p>
         </div>
 
-        <!-- Remaining Balance -->
+        <!-- Remaining Balance Card -->
         <div class="bg-white rounded-lg shadow-md p-6 hover:shadow-lg transition-shadow">
           <div class="flex items-center justify-between mb-2">
-            <div class="p-3 bg-red-100 rounded-lg">
-              <Wallet :size="24" class="text-red-600" />
+            <div :class="[
+              'p-3 rounded-lg',
+              hasOutstandingBalance ? 'bg-red-100' : 'bg-green-100'
+            ]">
+              <Wallet :size="24" :class="hasOutstandingBalance ? 'text-red-600' : 'text-green-600'" />
             </div>
           </div>
           <p class="text-sm text-gray-600">Remaining Balance</p>
-          <p class="text-2xl font-bold text-red-600">{{ formatCurrency(stats.remaining_balance) }}</p>
+          <p class="text-2xl font-bold" :class="hasOutstandingBalance ? 'text-red-600' : 'text-green-600'">
+            {{ formatCurrency(stats.remaining_balance) }}
+          </p>
         </div>
 
-        <!-- Pending Charges -->
+        <!-- Pending Charges Card -->
         <div class="bg-white rounded-lg shadow-md p-6 hover:shadow-lg transition-shadow">
           <div class="flex items-center justify-between mb-2">
             <div class="p-3 bg-yellow-100 rounded-lg">
@@ -181,20 +187,24 @@ const downloadPDF = () => {
             </div>
           </div>
           <p class="text-sm text-gray-600">Pending Charges</p>
-          <p class="text-2xl font-bold text-yellow-600">{{ stats.pending_charges_count }}</p>
+          <p class="text-2xl font-bold text-yellow-600">
+            {{ stats.pending_charges_count }}
+          </p>
         </div>
       </div>
 
-      <!-- Payment Progress -->
+      <!-- Payment Progress Bar -->
       <div class="bg-white rounded-lg shadow-md p-6">
         <div class="flex justify-between items-center mb-4">
           <h2 class="text-xl font-semibold">Payment Progress</h2>
-          <span class="text-2xl font-bold text-blue-600">{{ getPaymentPercentage }}%</span>
+          <span class="text-2xl font-bold text-blue-600">
+            {{ formatPercentage(paymentPercentage) }}
+          </span>
         </div>
         <div class="w-full bg-gray-200 rounded-full h-4">
           <div
             class="bg-gradient-to-r from-blue-500 to-green-500 h-4 rounded-full transition-all duration-500"
-            :style="{ width: `${getPaymentPercentage}%` }"
+            :style="{ width: `${paymentPercentage}%` }"
           ></div>
         </div>
         <div class="flex justify-between mt-2 text-sm text-gray-600">
@@ -205,9 +215,9 @@ const downloadPDF = () => {
 
       <!-- Main Content Grid -->
       <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <!-- Left Column: Notifications & Recent Transactions -->
+        <!-- Left Column (2/3 width) -->
         <div class="lg:col-span-2 space-y-6">
-          <!-- Important Notifications -->
+          <!-- Notifications -->
           <div v-if="activeNotifications.length" class="bg-white rounded-lg shadow-md p-6">
             <div class="flex items-center gap-2 mb-4">
               <Bell :size="20" class="text-blue-600" />
@@ -220,11 +230,15 @@ const downloadPDF = () => {
                 class="border-l-4 border-blue-500 bg-blue-50 p-4 rounded-r"
               >
                 <h3 class="font-semibold text-blue-900">{{ notification.title }}</h3>
-                <p class="text-sm text-gray-700 whitespace-pre-line mt-1">{{ notification.message }}</p>
-                <div v-if="notification.start_date" class="text-xs text-gray-500 mt-2">
-                  <Calendar :size="12" class="inline mr-1" />
-                  {{ formatDate(notification.start_date) }}
-                  <span v-if="notification.end_date"> - {{ formatDate(notification.end_date) }}</span>
+                <p class="text-sm text-gray-700 whitespace-pre-line mt-1">
+                  {{ notification.message }}
+                </p>
+                <div v-if="notification.start_date" class="text-xs text-gray-500 mt-2 flex items-center gap-1">
+                  <Calendar :size="12" />
+                  {{ formatDate(notification.start_date, 'short') }}
+                  <span v-if="notification.end_date">
+                    - {{ formatDate(notification.end_date, 'short') }}
+                  </span>
                 </div>
               </div>
             </div>
@@ -236,21 +250,24 @@ const downloadPDF = () => {
               <h2 class="text-xl font-semibold">Recent Transactions</h2>
               <Link
                 :href="route('transactions.index')"
-                class="text-sm text-blue-600 hover:text-blue-800"
+                class="text-sm text-blue-600 hover:text-blue-800 flex items-center gap-1"
               >
-                View All →
+                View All <ArrowRight :size="16" />
               </Link>
             </div>
+
+            <!-- Transactions List -->
             <div v-if="recentTransactions.length" class="space-y-3">
               <div
                 v-for="transaction in recentTransactions"
                 :key="transaction.id"
-                class="flex justify-between items-center p-3 hover:bg-gray-50 rounded"
+                class="flex justify-between items-center p-3 hover:bg-gray-50 rounded cursor-pointer"
+                @click="viewTransaction(transaction)"
               >
                 <div class="flex-1">
                   <p class="font-medium">{{ transaction.type }}</p>
                   <p class="text-sm text-gray-600">{{ transaction.reference }}</p>
-                  <p class="text-xs text-gray-500">{{ formatDate(transaction.created_at) }}</p>
+                  <p class="text-xs text-gray-500">{{ formatDate(transaction.created_at, 'short') }}</p>
                 </div>
                 <div class="text-right">
                   <p
@@ -267,38 +284,20 @@ const downloadPDF = () => {
                   >
                     {{ transaction.status }}
                   </span>
-                  <div class="mt-2 flex gap-2">
-                    <button
-                      @click="viewTransaction(transaction)"
-                      class="text-xs px-2 py-1 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors"
-                    >
-                      View
-                    </button>
-                    <button
-                      v-if="transaction.status === 'paid'"
-                      @click="downloadPDF"
-                      class="text-xs px-2 py-1 bg-green-600 text-white rounded hover:bg-green-700 transition-colors"
-                    >
-                      Download
-                    </button>
-                    <Link
-                      v-if="transaction.status === 'pending' && transaction.kind === 'charge'"
-                      :href="route('student.account', { tab: 'payment' })"
-                      class="text-xs px-2 py-1 bg-red-600 text-white rounded hover:bg-red-700 transition-colors"
-                    >
-                      Pay Now
-                    </Link>
-                  </div>
                 </div>
               </div>
             </div>
-            <p v-else class="text-gray-500 text-center py-4">No recent transactions</p>
+
+            <!-- Empty State -->
+            <p v-else class="text-gray-500 text-center py-8">
+              No recent transactions
+            </p>
           </div>
         </div>
 
-        <!-- Right Column: Quick Actions -->
+        <!-- Right Column (1/3 width) -->
         <div class="space-y-6">
-          <!-- Quick Actions Card -->
+          <!-- Quick Actions -->
           <div class="bg-white rounded-lg shadow-md p-6">
             <h2 class="text-xl font-semibold mb-4">Quick Actions</h2>
             <div class="space-y-3">
@@ -343,151 +342,32 @@ const downloadPDF = () => {
             </div>
           </div>
 
-          <!-- Payment Reminder -->
-          <div v-if="stats.remaining_balance > 0" class="bg-red-50 border border-red-200 rounded-lg p-6">
+          <!-- Status Card -->
+          <div :class="['border rounded-lg p-6', statusMessage.class]">
             <div class="flex items-center gap-2 mb-3">
-              <AlertCircle :size="20" class="text-red-600" />
-              <h3 class="font-semibold text-red-900">Payment Reminder</h3>
+              <component :is="statusMessage.icon" :size="20" />
+              <h3 class="font-semibold">{{ statusMessage.title }}</h3>
             </div>
-            <p class="text-sm text-gray-700 mb-4">
-              You have an outstanding balance of <strong>{{ formatCurrency(stats.remaining_balance) }}</strong>
-            </p>
-            <Link
-              :href="route('student.account', { tab: 'payment' })"
-              class="block w-full text-center px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700 transition-colors"
+            <p class="text-sm mb-4">{{ statusMessage.message }}</p>
+            <Button
+              :class="['w-full', statusMessage.buttonClass]"
+              @click="handlePayNow()"
             >
-              Pay Now
-            </Link>
-          </div>
-
-          <!-- Payment Success -->
-          <div v-else class="bg-green-50 border border-green-200 rounded-lg p-6">
-            <div class="flex items-center gap-2 mb-3">
-              <CheckCircle :size="20" class="text-green-600" />
-              <h3 class="font-semibold text-green-900">All Paid!</h3>
-            </div>
-            <p class="text-sm text-gray-700">
-              Great job! You have no outstanding balance.
-            </p>
+              {{ statusMessage.buttonText }}
+            </Button>
           </div>
         </div>
       </div>
     </div>
 
     <!-- Transaction Details Dialog -->
-    <Dialog v-model:open="showDetailsDialog">
-      <DialogContent class="max-w-2xl max-h-[80vh] overflow-y-auto">
-        <DialogHeader>
-          <DialogTitle>Transaction Details</DialogTitle>
-          <DialogDescription>
-            Complete information about this transaction
-          </DialogDescription>
-        </DialogHeader>
-
-        <div v-if="selectedTransaction" class="space-y-6">
-          <!-- Basic Information -->
-          <div class="space-y-4">
-            <h3 class="font-semibold text-lg border-b pb-2">Basic Information</h3>
-            <div class="grid grid-cols-2 gap-4">
-              <div>
-                <p class="text-sm text-gray-600">Reference Number</p>
-                <p class="font-mono font-medium">{{ selectedTransaction.reference }}</p>
-              </div>
-              <div>
-                <p class="text-sm text-gray-600">Date</p>
-                <p class="font-medium">{{ formatDate(selectedTransaction.created_at) }}</p>
-              </div>
-              <div>
-                <p class="text-sm text-gray-600">Transaction Type</p>
-                <span 
-                  class="inline-block px-2 py-1 text-xs font-semibold rounded-full"
-                  :class="selectedTransaction.kind === 'charge' 
-                    ? 'bg-red-100 text-red-800' 
-                    : 'bg-green-100 text-green-800'"
-                >
-                  {{ selectedTransaction.kind }}
-                </span>
-              </div>
-              <div>
-                <p class="text-sm text-gray-600">Status</p>
-                <span 
-                  class="inline-block px-2 py-1 text-xs font-semibold rounded-full"
-                  :class="{
-                    'bg-green-100 text-green-800': selectedTransaction.status === 'paid',
-                    'bg-yellow-100 text-yellow-800': selectedTransaction.status === 'pending',
-                    'bg-red-100 text-red-800': selectedTransaction.status === 'failed',
-                    'bg-gray-100 text-gray-800': selectedTransaction.status === 'cancelled'
-                  }"
-                >
-                  {{ selectedTransaction.status }}
-                </span>
-              </div>
-              <div>
-                <p class="text-sm text-gray-600">Category</p>
-                <p class="font-medium">{{ selectedTransaction.type }}</p>
-              </div>
-              <div>
-                <p class="text-sm text-gray-600">Amount</p>
-                <p 
-                  class="text-xl font-bold"
-                  :class="selectedTransaction.kind === 'charge' ? 'text-red-600' : 'text-green-600'"
-                >
-                  {{ selectedTransaction.kind === 'charge' ? '+' : '-' }}₱{{ formatCurrency(selectedTransaction.amount).replace('₱', '') }}
-                </p>
-              </div>
-            </div>
-          </div>
-
-          <!-- Payment Information (if payment) -->
-          <div v-if="selectedTransaction.kind === 'payment'" class="space-y-4">
-            <h3 class="font-semibold text-lg border-b pb-2">Payment Information</h3>
-            <div class="grid grid-cols-2 gap-4">
-              <div>
-                <p class="text-sm text-gray-600">Payment Method</p>
-                <p class="font-medium capitalize">{{ selectedTransaction.payment_channel || 'N/A' }}</p>
-              </div>
-              <div>
-                <p class="text-sm text-gray-600">Payment Date</p>
-                <p class="font-medium">{{ selectedTransaction.paid_at ? formatDate(selectedTransaction.paid_at) : 'N/A' }}</p>
-              </div>
-            </div>
-          </div>
-
-          <!-- Fee Breakdown (if charge with metadata) -->
-          <div v-if="selectedTransaction.kind === 'charge'" class="space-y-4">
-            <h3 class="font-semibold text-lg border-b pb-2">Fee Breakdown</h3>
-            <div class="bg-gray-50 rounded-lg p-4 space-y-3">
-              <div class="flex justify-between items-center">
-                <span class="text-gray-700">{{ selectedTransaction.type }}</span>
-                <span class="font-semibold">₱{{ formatCurrency(selectedTransaction.amount).replace('₱', '') }}</span>
-              </div>
-              <div v-if="selectedTransaction.year && selectedTransaction.semester" class="text-sm text-gray-600 pt-2 border-t">
-                <p>Academic Year: {{ selectedTransaction.year }}</p>
-                <p>Semester: {{ selectedTransaction.semester }}</p>
-              </div>
-            </div>
-          </div>
-
-          <!-- Action Buttons -->
-          <div class="flex justify-end gap-3 pt-4 border-t">
-            <Button variant="outline" @click="closeDetailsDialog">
-              Close
-            </Button>
-            <Button v-if="selectedTransaction.status === 'paid'" @click="downloadPDF">
-              Download PDF
-            </Button>
-            <Button 
-              v-if="selectedTransaction.status === 'pending' && selectedTransaction.kind === 'charge'"
-              variant="destructive"
-              as-child
-            >
-              <Link :href="route('student.account', { tab: 'payment' })" @click="closeDetailsDialog">
-                Pay Now
-              </Link>
-            </Button>
-          </div>
-        </div>
-      </DialogContent>
-    </Dialog>
+    <TransactionDetailsDialog
+      v-model:open="showDetailsDialog"
+      :transaction="selectedTransaction"
+      :show-pay-now-button="true"
+      :show-download-button="true"
+      @pay-now="handlePayNow"
+      @download="handleDownload"
+    />
   </AppLayout>
 </template>

@@ -1,75 +1,53 @@
 <script setup lang="ts">
+/**
+ * Student Account Overview (IMPROVED)
+ * Location: resources/js/pages/Student/AccountOverview.vue
+ * 
+ * Key improvements:
+ * - Uses reusable composables and components
+ * - Better tab management with URL sync
+ * - Improved payment form validation
+ * - Better error handling
+ * - Cleaner computed properties
+ */
+
 import { ref, computed, watch, onMounted } from 'vue'
 import { Head, Link, useForm } from '@inertiajs/vue3'
 import AppLayout from '@/layouts/AppLayout.vue'
 import Breadcrumbs from '@/components/Breadcrumbs.vue'
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import TransactionDetailsDialog from '@/components/TransactionDetailsDialog.vue'
 import { Button } from '@/components/ui/button'
-import { CreditCard, Calendar, CheckCircle, XCircle, Clock, AlertCircle } from 'lucide-vue-next'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import { useFormatters } from '@/composables/useFormatters'
+import type { Transaction, Account, Assessment, PaymentMethod } from '@/types/transaction'
+import {
+  CreditCard,
+  Calendar,
+  CheckCircle,
+  AlertCircle,
+  Clock,
+  Receipt,
+  History,
+  DollarSign,
+} from 'lucide-vue-next'
 
-type Fee = {
+interface Fee {
   name: string
   amount: number
   category?: string
 }
 
-type Transaction = {
-  id: number
-  reference: string
-  type: string
-  kind: string
-  amount: number
-  status: string
-  created_at: string
-  year?: string
-  semester?: string
-  payment_channel?: string
-  paid_at?: string
-  fee?: {
-    name: string
-    category: string
-  }
-  meta?: {
-    fee_name?: string
-    description?: string
-    assessment_id?: number
-    subject_code?: string
-    subject_name?: string
-  }
-}
-
-type Account = {
-  id: number
-  balance: number
-  user_id: number
-}
-
-type CurrentTerm = {
-  year: number
-  semester: string
-}
-
-type Assessment = {
-  id: number
-  assessment_number: string
-  year_level: string
-  semester: string
-  school_year: string
-  tuition_fee: number
-  other_fees: number
-  total_assessment: number
-  status: string
-  created_at: string
-}
-
-const props = withDefaults(defineProps<{
+interface Props {
   account: Account
   transactions: Transaction[]
   fees: Fee[]
-  currentTerm?: CurrentTerm
-  tab?: string
+  currentTerm?: { year: number; semester: string }
+  tab?: 'fees' | 'history' | 'payment'
   latestAssessment?: Assessment
-}>(), {
+}
+
+const props = withDefaults(defineProps<Props>(), {
   currentTerm: () => ({
     year: new Date().getFullYear(),
     semester: '1st Sem'
@@ -77,78 +55,41 @@ const props = withDefaults(defineProps<{
   tab: 'fees'
 })
 
+const { formatCurrency, formatDate, formatPercentage } = useFormatters()
+
 const breadcrumbs = [
   { title: 'Dashboard', href: route('dashboard') },
   { title: 'My Account' },
 ]
 
-const showDetailsDialog = ref(false)
-const selectedTransaction = ref<Transaction | null>(null)
-
-// Get tab from URL if prop is not working
+// Tab Management
 const getTabFromUrl = (): 'fees' | 'history' | 'payment' => {
   const urlParams = new URLSearchParams(window.location.search)
   const tab = urlParams.get('tab')
-  
-  if (tab === 'payment') return 'payment'
-  if (tab === 'history') return 'history'
-  return 'fees'
+  return (tab === 'payment' || tab === 'history') ? tab : 'fees'
 }
 
-// Set initial tab - try prop first, then URL
-const getInitialTab = (): 'fees' | 'history' | 'payment' => {
-  if (props.tab === 'payment' || props.tab === 'history') {
-    return props.tab
-  }
-  return getTabFromUrl()
-}
+const activeTab = ref<'fees' | 'history' | 'payment'>(
+  props.tab || getTabFromUrl()
+)
 
-const activeTab = ref<'fees' | 'history' | 'payment'>(getInitialTab())
+// Dialog state
+const showDetailsDialog = ref(false)
+const selectedTransaction = ref<Transaction | null>(null)
 
-// Watch for prop changes (in case of navigation)
-watch(() => props.tab, (newTab) => {
-  if (newTab === 'payment' || newTab === 'history') {
-    activeTab.value = newTab
-  }
-})
-
-// Ensure correct tab on mount
-onMounted(() => {
-  const urlTab = getTabFromUrl()
-  if (urlTab === 'payment' || urlTab === 'history') {
-    activeTab.value = urlTab
-  }
-})
-
+// Payment Form
 const paymentForm = useForm({
   amount: 0,
-  payment_method: 'cash',
+  payment_method: 'cash' as PaymentMethod,
   reference_number: '',
   paid_at: new Date().toISOString().split('T')[0],
   description: 'Payment for fees',
 })
 
-const formatCurrency = (amount: number) => {
-  return new Intl.NumberFormat('en-PH', {
-    style: 'currency',
-    currency: 'PHP',
-  }).format(amount)
-}
-
-const formatDate = (date: string) => {
-  return new Date(date).toLocaleDateString('en-US', {
-    year: 'numeric',
-    month: 'long',
-    day: 'numeric',
-  })
-}
-
-// Use latest assessment if available, otherwise calculate from fees
+// Computed: Assessment totals
 const totalAssessmentFee = computed(() => {
-  if (props.latestAssessment) {
-    return props.latestAssessment.total_assessment
-  }
-  return props.fees.reduce((sum, fee) => sum + Number(fee.amount), 0)
+  return props.latestAssessment?.total_assessment ?? 
+    props.fees.reduce((sum, fee) => sum + Number(fee.amount), 0)
 })
 
 const totalPaid = computed(() => {
@@ -157,31 +98,30 @@ const totalPaid = computed(() => {
     .reduce((sum, t) => sum + Number(t.amount), 0)
 })
 
-// Robust calculation: compute from transactions regardless of backend sign convention
 const remainingBalance = computed(() => {
-  const txs = props.transactions ?? []
-
-  const charges = txs
+  const charges = props.transactions
     .filter(t => t.kind === 'charge')
     .reduce((sum, t) => sum + Number(t.amount || 0), 0)
 
-  const payments = txs
+  const payments = props.transactions
     .filter(t => t.kind === 'payment' && t.status === 'paid')
     .reduce((sum, t) => sum + Number(t.amount || 0), 0)
 
   const diff = charges - payments
-  const rounded = Math.round(diff * 100) / 100
-
-  return rounded > 0 ? rounded : 0
+  return Math.max(0, Math.round(diff * 100) / 100)
 })
 
-// Group fees by category for better display
+// Computed: Payment percentage
+const paymentPercentage = computed(() => {
+  if (totalAssessmentFee.value === 0) return 0
+  return Math.min(100, Math.round((totalPaid.value / totalAssessmentFee.value) * 100))
+})
+
+// Computed: Grouped fees by category
 const feesByCategory = computed(() => {
   const grouped = props.fees.reduce((acc, fee) => {
     const category = fee.category || 'Other'
-    if (!acc[category]) {
-      acc[category] = []
-    }
+    if (!acc[category]) acc[category] = []
     acc[category].push(fee)
     return acc
   }, {} as Record<string, Fee[]>)
@@ -193,45 +133,90 @@ const feesByCategory = computed(() => {
   }))
 })
 
+// Computed: Payment history
 const paymentHistory = computed(() => {
   return props.transactions
     .filter(t => t.kind === 'payment')
     .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
 })
 
+// Computed: Pending charges
 const pendingCharges = computed(() => {
   return props.transactions
     .filter(t => t.kind === 'charge' && t.status === 'pending')
 })
 
+// Computed: Can submit payment
 const canSubmitPayment = computed(() => {
-  return remainingBalance.value > 0 && paymentForm.amount > 0
+  return remainingBalance.value > 0 && 
+    paymentForm.amount > 0 && 
+    paymentForm.amount <= remainingBalance.value &&
+    !paymentForm.processing
 })
 
-const submitPayment = () => {
-  // Validate amount
+// Computed: Payment form errors
+const paymentFormErrors = computed(() => {
+  const errors: string[] = []
+  
   if (paymentForm.amount <= 0) {
-    paymentForm.setError('amount', 'Amount must be greater than zero')
-    return
+    errors.push('Amount must be greater than zero')
   }
-
   if (paymentForm.amount > remainingBalance.value) {
-    paymentForm.setError('amount', 'Amount cannot exceed remaining balance')
+    errors.push('Amount cannot exceed remaining balance')
+  }
+  if (!paymentForm.payment_method) {
+    errors.push('Please select a payment method')
+  }
+  if (!paymentForm.paid_at) {
+    errors.push('Please select a payment date')
+  }
+  
+  return errors
+})
+
+// Watch for tab changes
+watch(() => props.tab, (newTab) => {
+  if (newTab) activeTab.value = newTab
+})
+
+onMounted(() => {
+  const urlTab = getTabFromUrl()
+  if (urlTab) activeTab.value = urlTab
+})
+
+// Methods
+const viewTransaction = (transaction: Transaction) => {
+  selectedTransaction.value = transaction
+  showDetailsDialog.value = true
+}
+
+const handlePayNow = (transaction: Transaction) => {
+  // Pre-fill payment form with transaction data
+  paymentForm.amount = transaction.amount
+  paymentForm.description = `Payment for ${transaction.type}`
+  activeTab.value = 'payment'
+}
+
+const submitPayment = () => {
+  // Validate form
+  if (!canSubmitPayment.value) {
+    if (paymentFormErrors.value.length > 0) {
+      paymentForm.setError('amount', paymentFormErrors.value[0])
+    }
     return
   }
 
   paymentForm.post(route('account.pay-now'), {
     preserveScroll: true,
     onSuccess: () => {
-      // Reset form after successful payment
+      // Reset form
       paymentForm.reset()
       paymentForm.amount = 0
       paymentForm.payment_method = 'cash'
-      paymentForm.reference_number = ''
       paymentForm.paid_at = new Date().toISOString().split('T')[0]
       paymentForm.description = 'Payment for fees'
       
-      // Switch to payment history tab to see the new payment
+      // Switch to history tab
       activeTab.value = 'history'
     },
     onError: (errors) => {
@@ -240,19 +225,14 @@ const submitPayment = () => {
   })
 }
 
-const viewTransaction = (transaction: Transaction) => {
-  selectedTransaction.value = transaction
-  showDetailsDialog.value = true
-}
-
-const closeDetailsDialog = () => {
-  showDetailsDialog.value = false
-  selectedTransaction.value = null
-}
-
 const downloadPDF = () => {
-  // Implement download logic if needed
+  // Implement download logic
   console.log('Download PDF')
+}
+
+// Quick payment presets
+const setPaymentAmount = (percentage: number) => {
+  paymentForm.amount = Math.round(remainingBalance.value * (percentage / 100) * 100) / 100
 }
 </script>
 
@@ -280,11 +260,13 @@ const downloadPDF = () => {
         <div class="bg-white rounded-lg shadow-md p-6 hover:shadow-lg transition-shadow">
           <div class="flex items-center justify-between mb-2">
             <div class="p-3 bg-blue-100 rounded-lg">
-              <CreditCard :size="24" class="text-blue-600" />
+              <Receipt :size="24" class="text-blue-600" />
             </div>
           </div>
           <h3 class="text-sm font-medium text-gray-600 mb-2">Total Assessment Fee</h3>
-          <p class="text-3xl font-bold text-blue-600">{{ formatCurrency(totalAssessmentFee) }}</p>
+          <p class="text-3xl font-bold text-blue-600">
+            {{ formatCurrency(totalAssessmentFee) }}
+          </p>
           <p v-if="latestAssessment" class="text-xs text-gray-500 mt-2">
             Tuition: {{ formatCurrency(latestAssessment.tuition_fee) }} • 
             Other: {{ formatCurrency(latestAssessment.other_fees) }}
@@ -299,7 +281,9 @@ const downloadPDF = () => {
             </div>
           </div>
           <h3 class="text-sm font-medium text-gray-600 mb-2">Total Paid</h3>
-          <p class="text-3xl font-bold text-green-600">{{ formatCurrency(totalPaid) }}</p>
+          <p class="text-3xl font-bold text-green-600">
+            {{ formatCurrency(totalPaid) }}
+          </p>
           <p class="text-xs text-gray-500 mt-2">
             {{ paymentHistory.length }} payment(s) made
           </p>
@@ -312,7 +296,8 @@ const downloadPDF = () => {
               'p-3 rounded-lg',
               remainingBalance > 0 ? 'bg-red-100' : 'bg-green-100'
             ]">
-              <component :is="remainingBalance > 0 ? AlertCircle : CheckCircle" 
+              <component 
+                :is="remainingBalance > 0 ? AlertCircle : CheckCircle" 
                 :size="24" 
                 :class="remainingBalance > 0 ? 'text-red-600' : 'text-green-600'" 
               />
@@ -328,18 +313,18 @@ const downloadPDF = () => {
         </div>
       </div>
 
-      <!-- Payment Progress Bar (if there's a balance) -->
+      <!-- Payment Progress Bar -->
       <div v-if="totalAssessmentFee > 0" class="bg-white rounded-lg shadow-md p-6 mb-6">
         <div class="flex justify-between items-center mb-4">
           <h2 class="text-xl font-semibold">Payment Progress</h2>
           <span class="text-2xl font-bold text-blue-600">
-            {{ Math.round((totalPaid / totalAssessmentFee) * 100) }}%
+            {{ formatPercentage(paymentPercentage) }}
           </span>
         </div>
         <div class="w-full bg-gray-200 rounded-full h-4">
           <div
             class="bg-gradient-to-r from-blue-500 to-green-500 h-4 rounded-full transition-all duration-500"
-            :style="{ width: `${Math.min((totalPaid / totalAssessmentFee) * 100, 100)}%` }"
+            :style="{ width: `${paymentPercentage}%` }"
           ></div>
         </div>
         <div class="flex justify-between mt-2 text-sm text-gray-600">
@@ -355,34 +340,37 @@ const downloadPDF = () => {
             <button
               @click="activeTab = 'fees'"
               :class="[
-                'py-4 px-2 border-b-2 font-medium text-sm transition-colors',
+                'py-4 px-2 border-b-2 font-medium text-sm transition-colors flex items-center gap-2',
                 activeTab === 'fees'
                   ? 'border-blue-600 text-blue-600'
                   : 'border-transparent text-gray-500 hover:text-gray-700',
               ]"
             >
+              <Receipt :size="16" />
               Fees & Assessment
             </button>
             <button
               @click="activeTab = 'history'"
               :class="[
-                'py-4 px-2 border-b-2 font-medium text-sm transition-colors',
+                'py-4 px-2 border-b-2 font-medium text-sm transition-colors flex items-center gap-2',
                 activeTab === 'history'
                   ? 'border-blue-600 text-blue-600'
                   : 'border-transparent text-gray-500 hover:text-gray-700',
               ]"
             >
+              <History :size="16" />
               Payment History
             </button>
             <button
               @click="activeTab = 'payment'"
               :class="[
-                'py-4 px-2 border-b-2 font-medium text-sm transition-colors',
+                'py-4 px-2 border-b-2 font-medium text-sm transition-colors flex items-center gap-2',
                 activeTab === 'payment'
                   ? 'border-blue-600 text-blue-600'
                   : 'border-transparent text-gray-500 hover:text-gray-700',
               ]"
             >
+              <CreditCard :size="16" />
               Make Payment
             </button>
           </nav>
@@ -391,11 +379,11 @@ const downloadPDF = () => {
         <!-- Tab Content -->
         <div class="p-6">
           <!-- Fees Tab -->
-          <div v-if="activeTab === 'fees'">
-            <h2 class="text-lg font-semibold mb-4">CURRENT ASSESSMENT</h2>
+          <div v-if="activeTab === 'fees'" class="space-y-6">
+            <h2 class="text-lg font-semibold">CURRENT ASSESSMENT</h2>
             
             <!-- Assessment Info Banner -->
-            <div v-if="latestAssessment" class="bg-blue-50 rounded-lg p-4 mb-6 border border-blue-200">
+            <div v-if="latestAssessment" class="bg-blue-50 rounded-lg p-4 border border-blue-200">
               <div class="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
                 <div>
                   <span class="text-gray-600">Assessment No:</span>
@@ -452,7 +440,7 @@ const downloadPDF = () => {
             </p>
 
             <!-- Pending Charges -->
-            <div v-if="pendingCharges.length" class="mt-8 border-t pt-6">
+            <div v-if="pendingCharges.length" class="border-t pt-6">
               <h3 class="text-md font-semibold mb-4 text-red-700 flex items-center gap-2">
                 <Clock :size="20" />
                 PENDING CHARGES
@@ -461,7 +449,8 @@ const downloadPDF = () => {
                 <div
                   v-for="charge in pendingCharges"
                   :key="charge.id"
-                  class="flex justify-between items-center p-3 bg-red-50 rounded border border-red-200"
+                  class="flex justify-between items-center p-3 bg-red-50 rounded border border-red-200 cursor-pointer hover:bg-red-100"
+                  @click="viewTransaction(charge)"
                 >
                   <div>
                     <p class="font-medium text-gray-900">
@@ -477,12 +466,13 @@ const downloadPDF = () => {
                       <p class="text-lg font-semibold text-red-600">{{ formatCurrency(charge.amount) }}</p>
                       <span class="text-xs px-2 py-1 bg-yellow-100 text-yellow-800 rounded">Pending</span>
                     </div>
-                    <button
-                      @click="viewTransaction(charge)"
-                      class="text-xs px-3 py-1 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors"
+                    <Button
+                      size="sm"
+                      variant="destructive"
+                      @click.stop="handlePayNow(charge)"
                     >
-                      View
-                    </button>
+                      Pay Now
+                    </Button>
                   </div>
                 </div>
               </div>
@@ -490,14 +480,15 @@ const downloadPDF = () => {
           </div>
 
           <!-- Payment History Tab -->
-          <div v-if="activeTab === 'history'">
-            <h2 class="text-lg font-semibold mb-4">Payment History</h2>
+          <div v-if="activeTab === 'history'" class="space-y-4">
+            <h2 class="text-lg font-semibold">Payment History</h2>
             
             <div v-if="paymentHistory.length" class="space-y-3">
               <div
                 v-for="payment in paymentHistory"
                 :key="payment.id"
-                class="flex justify-between items-center p-4 border rounded-lg hover:bg-gray-50 transition-colors"
+                class="flex justify-between items-center p-4 border rounded-lg hover:bg-gray-50 transition-colors cursor-pointer"
+                @click="viewTransaction(payment)"
               >
                 <div class="flex items-center gap-3">
                   <div class="p-2 bg-green-100 rounded">
@@ -506,7 +497,7 @@ const downloadPDF = () => {
                   <div>
                     <p class="font-medium text-gray-900">{{ payment.meta?.description || payment.type }}</p>
                     <p class="text-sm text-gray-600">
-                      {{ formatDate(payment.created_at) }}
+                      {{ formatDate(payment.created_at, 'short') }}
                     </p>
                     <p class="text-xs text-gray-500">{{ payment.reference }}</p>
                   </div>
@@ -521,18 +512,18 @@ const downloadPDF = () => {
             </div>
 
             <div v-else class="text-center py-12">
-              <XCircle :size="48" class="text-gray-400 mx-auto mb-3" />
+              <History :size="48" class="text-gray-400 mx-auto mb-3" />
               <p class="text-gray-500">No payment history yet</p>
               <p class="text-sm text-gray-400 mt-1">Your payments will appear here after you make them</p>
             </div>
           </div>
 
           <!-- Payment Form Tab -->
-          <div v-if="activeTab === 'payment'">
-            <h2 class="text-2xl font-bold mb-6">Add New Payment</h2>
+          <div v-if="activeTab === 'payment'" class="space-y-6">
+            <h2 class="text-2xl font-bold">Add New Payment</h2>
             
             <!-- No Balance Message -->
-            <div v-if="remainingBalance <= 0" class="mb-6 p-4 bg-green-50 border border-green-200 rounded-lg">
+            <div v-if="remainingBalance <= 0" class="p-4 bg-green-50 border border-green-200 rounded-lg">
               <div class="flex items-center gap-2">
                 <CheckCircle :size="20" class="text-green-600" />
                 <p class="text-green-800 font-medium">You have no outstanding balance!</p>
@@ -540,13 +531,49 @@ const downloadPDF = () => {
               <p class="text-sm text-green-700 mt-1">All fees have been paid in full.</p>
             </div>
 
-            <form @submit.prevent="submitPayment">
+            <form @submit.prevent="submitPayment" class="space-y-6">
+              <!-- Quick Payment Presets -->
+              <div v-if="remainingBalance > 0" class="space-y-2">
+                <Label>Quick Payment Amounts</Label>
+                <div class="grid grid-cols-4 gap-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    @click="setPaymentAmount(25)"
+                  >
+                    25%
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    @click="setPaymentAmount(50)"
+                  >
+                    50%
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    @click="setPaymentAmount(75)"
+                  >
+                    75%
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    @click="setPaymentAmount(100)"
+                  >
+                    Full
+                  </Button>
+                </div>
+              </div>
+
               <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <!-- Amount -->
-                <div>
-                  <label class="block text-sm font-medium text-gray-700 mb-1">Amount</label>
-                  <input
-                    v-model="paymentForm.amount"
+                <div class="space-y-2">
+                  <Label for="amount">Amount *</Label>
+                  <Input
+                    id="amount"
+                    v-model.number="paymentForm.amount"
                     type="number"
                     step="0.01"
                     min="0"
@@ -554,20 +581,20 @@ const downloadPDF = () => {
                     placeholder="0.00"
                     required
                     :disabled="remainingBalance <= 0"
-                    class="w-full px-4 py-2 border rounded-lg shadow-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none disabled:bg-gray-100 disabled:cursor-not-allowed"
                   />
-                  <p class="text-xs text-gray-500 mt-1">
+                  <p class="text-xs text-gray-500">
                     Maximum: {{ formatCurrency(remainingBalance) }}
                   </p>
-                  <div v-if="paymentForm.errors.amount" class="text-red-500 text-sm mt-1">
+                  <p v-if="paymentForm.errors.amount" class="text-red-500 text-sm">
                     {{ paymentForm.errors.amount }}
-                  </div>
+                  </p>
                 </div>
 
                 <!-- Payment Method -->
-                <div>
-                  <label class="block text-sm font-medium text-gray-700 mb-1">Payment Method</label>
+                <div class="space-y-2">
+                  <Label for="payment_method">Payment Method *</Label>
                   <select
+                    id="payment_method"
                     v-model="paymentForm.payment_method"
                     :disabled="remainingBalance <= 0"
                     class="w-full px-4 py-2 border rounded-lg shadow-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none disabled:bg-gray-100 disabled:cursor-not-allowed"
@@ -578,70 +605,69 @@ const downloadPDF = () => {
                     <option value="credit_card">Credit Card</option>
                     <option value="debit_card">Debit Card</option>
                   </select>
-                  <div v-if="paymentForm.errors.payment_method" class="text-red-500 text-sm mt-1">
+                  <p v-if="paymentForm.errors.payment_method" class="text-red-500 text-sm">
                     {{ paymentForm.errors.payment_method }}
-                  </div>
+                  </p>
                 </div>
 
-                <!-- Reference Number (System Generated - Disabled) -->
-                <div>
-                  <label class="block text-sm font-medium text-gray-700 mb-1">
+                <!-- Reference Number Info -->
+                <div class="space-y-2">
+                  <Label>
                     Reference Number
                     <span class="text-xs text-gray-500">(Auto-generated)</span>
-                  </label>
-                  <input
+                  </Label>
+                  <Input
                     value="System will generate after submission"
                     disabled
-                    class="w-full px-4 py-2 border rounded-lg shadow-sm bg-gray-100 cursor-not-allowed text-gray-500"
+                    class="bg-gray-100 cursor-not-allowed text-gray-500"
                   />
-                  <p class="text-xs text-gray-500 mt-1">
+                  <p class="text-xs text-gray-500">
                     Reference number will be automatically generated
                   </p>
                 </div>
 
                 <!-- Payment Date -->
-                <div>
-                  <label class="block text-sm font-medium text-gray-700 mb-1">Payment Date</label>
-                  <input
+                <div class="space-y-2">
+                  <Label for="paid_at">Payment Date *</Label>
+                  <Input
+                    id="paid_at"
                     v-model="paymentForm.paid_at"
                     type="date"
                     required
                     :disabled="remainingBalance <= 0"
-                    class="w-full px-4 py-2 border rounded-lg shadow-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none disabled:bg-gray-100 disabled:cursor-not-allowed"
                   />
-                  <div v-if="paymentForm.errors.paid_at" class="text-red-500 text-sm mt-1">
+                  <p v-if="paymentForm.errors.paid_at" class="text-red-500 text-sm">
                     {{ paymentForm.errors.paid_at }}
-                  </div>
+                  </p>
                 </div>
 
                 <!-- Description -->
-                <div class="md:col-span-2">
-                  <label class="block text-sm font-medium text-gray-700 mb-1">Description</label>
-                  <input
+                <div class="md:col-span-2 space-y-2">
+                  <Label for="description">Description *</Label>
+                  <Input
+                    id="description"
                     v-model="paymentForm.description"
                     placeholder="Payment description"
                     required
                     :disabled="remainingBalance <= 0"
-                    class="w-full px-4 py-2 border rounded-lg shadow-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none disabled:bg-gray-100 disabled:cursor-not-allowed"
                   />
-                  <div v-if="paymentForm.errors.description" class="text-red-500 text-sm mt-1">
+                  <p v-if="paymentForm.errors.description" class="text-red-500 text-sm">
                     {{ paymentForm.errors.description }}
-                  </div>
-                </div>
-
-                <!-- Submit Button -->
-                <div class="md:col-span-2">
-                  <button
-                    type="submit"
-                    class="w-full px-5 py-3 bg-indigo-600 text-white rounded-lg shadow hover:bg-indigo-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed disabled:bg-gray-400 font-medium"
-                    :disabled="!canSubmitPayment || paymentForm.processing"
-                  >
-                    <span v-if="paymentForm.processing">Processing...</span>
-                    <span v-else-if="remainingBalance <= 0">No Balance to Pay</span>
-                    <span v-else>Record Payment</span>
-                  </button>
+                  </p>
                 </div>
               </div>
+
+              <!-- Submit Button -->
+              <Button
+                type="submit"
+                class="w-full"
+                :disabled="!canSubmitPayment || paymentForm.processing"
+              >
+                <DollarSign v-if="!paymentForm.processing" class="w-4 h-4 mr-2" />
+                <span v-if="paymentForm.processing">Processing...</span>
+                <span v-else-if="remainingBalance <= 0">No Balance to Pay</span>
+                <span v-else>Record Payment</span>
+              </Button>
             </form>
           </div>
         </div>
@@ -649,137 +675,13 @@ const downloadPDF = () => {
     </div>
 
     <!-- Transaction Details Dialog -->
-    <Dialog v-model:open="showDetailsDialog">
-      <DialogContent class="max-w-2xl max-h-[80vh] overflow-y-auto">
-        <DialogHeader>
-          <DialogTitle>Transaction Details</DialogTitle>
-          <DialogDescription>
-            Complete information about this transaction
-          </DialogDescription>
-        </DialogHeader>
-
-        <div v-if="selectedTransaction" class="space-y-6">
-          <!-- Basic Information -->
-          <div class="space-y-4">
-            <h3 class="font-semibold text-lg border-b pb-2">Basic Information</h3>
-            <div class="grid grid-cols-2 gap-4">
-              <div>
-                <p class="text-sm text-gray-600">Reference Number</p>
-                <p class="font-mono font-medium">{{ selectedTransaction.reference }}</p>
-              </div>
-              <div>
-                <p class="text-sm text-gray-600">Date</p>
-                <p class="font-medium">{{ formatDate(selectedTransaction.created_at) }}</p>
-              </div>
-              <div>
-                <p class="text-sm text-gray-600">Transaction Type</p>
-                <span 
-                  class="inline-block px-2 py-1 text-xs font-semibold rounded-full"
-                  :class="selectedTransaction.kind === 'charge' 
-                    ? 'bg-red-100 text-red-800' 
-                    : 'bg-green-100 text-green-800'"
-                >
-                  {{ selectedTransaction.kind }}
-                </span>
-              </div>
-              <div>
-                <p class="text-sm text-gray-600">Status</p>
-                <span 
-                  class="inline-block px-2 py-1 text-xs font-semibold rounded-full"
-                  :class="{
-                    'bg-green-100 text-green-800': selectedTransaction.status === 'paid',
-                    'bg-yellow-100 text-yellow-800': selectedTransaction.status === 'pending',
-                    'bg-red-100 text-red-800': selectedTransaction.status === 'failed',
-                    'bg-gray-100 text-gray-800': selectedTransaction.status === 'cancelled'
-                  }"
-                >
-                  {{ selectedTransaction.status }}
-                </span>
-              </div>
-              <div>
-                <p class="text-sm text-gray-600">Category</p>
-                <p class="font-medium">{{ selectedTransaction.type }}</p>
-              </div>
-              <div>
-                <p class="text-sm text-gray-600">Amount</p>
-                <p 
-                  class="text-xl font-bold"
-                  :class="selectedTransaction.kind === 'charge' ? 'text-red-600' : 'text-green-600'"
-                >
-                  {{ selectedTransaction.kind === 'charge' ? '+' : '-' }}₱{{ formatCurrency(selectedTransaction.amount).replace('₱', '') }}
-                </p>
-              </div>
-            </div>
-          </div>
-
-                    <!-- Payment Information (if payment) -->
-          <div v-if="selectedTransaction.kind === 'payment'" class="space-y-4">
-            <h3 class="font-semibold text-lg border-b pb-2">Payment Information</h3>
-            <div class="grid grid-cols-2 gap-4">
-              <div>
-                <p class="text-sm text-gray-600">Payment Method</p>
-                <p class="font-medium capitalize">
-                  {{ selectedTransaction.payment_channel || 'N/A' }}
-                </p>
-              </div>
-
-              <div>
-                <p class="text-sm text-gray-600">Paid At</p>
-                <p class="font-medium">
-                  {{ selectedTransaction.paid_at ? formatDate(selectedTransaction.paid_at) : 'N/A' }}
-                </p>
-              </div>
-
-              <div class="col-span-2">
-                <p class="text-sm text-gray-600">Description</p>
-                <p class="font-medium">
-                  {{ selectedTransaction.meta?.description || 'No description provided' }}
-                </p>
-              </div>
-            </div>
-          </div>
-
-          <!-- Charge Information (if related to a fee/subject) -->
-          <div v-if="selectedTransaction.kind === 'charge'" class="space-y-4">
-            <h3 class="font-semibold text-lg border-b pb-2">Charge Details</h3>
-            <div class="grid grid-cols-2 gap-4">
-              <div>
-                <p class="text-sm text-gray-600">Fee / Subject</p>
-                <p class="font-medium">
-                  {{ selectedTransaction.meta?.fee_name || selectedTransaction.meta?.subject_name || 'N/A' }}
-                </p>
-              </div>
-
-              <div>
-                <p class="text-sm text-gray-600">Category</p>
-                <p class="font-medium">
-                  {{ selectedTransaction.fee?.category || selectedTransaction.meta?.subject_code || 'General' }}
-                </p>
-              </div>
-
-              <div v-if="selectedTransaction.meta?.subject_code">
-                <p class="text-sm text-gray-600">Subject Code</p>
-                <p class="font-medium">{{ selectedTransaction.meta.subject_code }}</p>
-              </div>
-
-              <div v-if="selectedTransaction.meta?.assessment_id">
-                <p class="text-sm text-gray-600">Assessment Reference</p>
-                <p class="font-medium">#{{ selectedTransaction.meta.assessment_id }}</p>
-              </div>
-            </div>
-          </div>
-
-          <!-- Close Button -->
-          <div class="pt-4 border-t">
-            <Button 
-              class="w-full bg-indigo-600 text-white hover:bg-indigo-700" 
-              @click="closeDetailsDialog"
-            >
-              Close
-            </Button>
-          </div>
-        </div>
-      </DialogContent>
-    </Dialog>
+    <TransactionDetailsDialog
+      v-model:open="showDetailsDialog"
+      :transaction="selectedTransaction"
+      :show-pay-now-button="true"
+      :show-download-button="true"
+      @pay-now="handlePayNow"
+      @download="downloadPDF"
+    />
   </AppLayout>
 </template>

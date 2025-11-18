@@ -1,5 +1,6 @@
 {
     "compilerOptions": {
+        "baseUrl": ".",
         /* Visit https://aka.ms/tsconfig to read more about this file */
 
         /* Projects */
@@ -35,6 +36,7 @@
         // "baseUrl": "./",                                  /* Specify the base directory to resolve non-relative module names. */
         "paths": {
             /* Specify a set of entries that re-map imports to additional lookup locations. */ "@/*": ["./resources/js/*"],
+            "@types/*": ["./resources/js/types/*"]
         },
         // "rootDirs": [],                                   /* Allow multiple folders to be treated as one when resolving modules. */
         // "typeRoots": [],                                  /* Specify multiple folders that act like './node_modules/@types'. */
@@ -121,6 +123,7 @@
         "resources/js/**/*.ts",
         "resources/js/**/*.vue",
         "resources/js/**/*.d.ts",
-        "resources/types/**/*.d.ts"
+        "resources/types/**/*.d.ts",
+        "resources/js/types/**/*.ts"
     ]
 }
