@@ -506,13 +506,12 @@ const setPaymentAmount = (percentage: number) => {
               </div>
 
               <!-- Subjects Table Header -->
-              <div class="grid grid-cols-7 gap-2 text-xs font-semibold border-t pt-2 pb-2">
+              <div class="grid grid-cols-8 gap-2 text-xs font-semibold border-t pt-2 pb-2">
                 <div class="col-span-1">Subject Code</div>
-                <div class="col-span-3">Description</div>
+                <div class="col-span-4">Description</div>
                 <div class="col-span-1 text-center">Units</div>
-                <div class="col-span-1 text-right">Tuition</div>
-                <div class="col-span-1 text-right">Lab Fee</div>
-                <div class="col-span-1 text-right">Misc Fee</div>
+                <div class="col-span-1 text-right">Time</div>
+                <div class="col-span-1 text-right">Day</div>
               </div>
 
               <!-- Subjects Rows -->
@@ -520,30 +519,23 @@ const setPaymentAmount = (percentage: number) => {
                 <div
                   v-for="(row, idx) in subjects"
                   :key="`sub-${idx}-${row.subject_code}`"
-                  class="grid grid-cols-7 gap-2 py-2 text-sm items-center"
+                  class="grid grid-cols-8 gap-2 py-2 text-sm items-center"
                 >
                   <div class="col-span-1">{{ row.subject_code }}</div>
-                  <div class="col-span-3">{{ row.description }}</div>
+                  <div class="col-span-4">{{ row.description }}</div>
                   <div class="col-span-1 text-center">{{ row.units }}</div>
-                  <div class="col-span-1 text-right">{{ formatCurrency(row.tuition || 0) }}</div>
-                  <div class="col-span-1 text-right">{{ formatCurrency(row.lab_fee || 0) }}</div>
-                  <div class="col-span-1 text-right">{{ formatCurrency(row.misc_fee || 0) }}</div>
+                  <!-- Assuming time and day data available in row.meta or row properties; adjust accordingly -->
+                  <div class="col-span-1 text-right">{{ row.time || '-' }}</div>
+                  <div class="col-span-1 text-right">{{ row.day || '-' }}</div>
                 </div>
 
-                <!-- Totals Row (aligned with header) -->
-                <div class="grid grid-cols-7 gap-2 pt-3 font-semibold">
+                <!-- Totals Row aligned with header -->
+                <div class="grid grid-cols-8 gap-2 pt-3 font-semibold">
                   <div class="col-span-1"></div>
-                  <div class="col-span-3 text-right">Total:</div>
+                  <div class="col-span-4 text-right">Total:</div>
                   <div class="col-span-1 text-center">{{ totalUnits }}</div>
-                  <div class="col-span-1 text-right">
-                    {{ formatCurrency(subjects.reduce((s, r) => s + Number(r.tuition || 0), 0)) }}
-                  </div>
-                  <div class="col-span-1 text-right">
-                    {{ formatCurrency(subjects.reduce((s, r) => s + Number(r.lab_fee || 0), 0)) }}
-                  </div>
-                  <div class="col-span-1 text-right">
-                    {{ formatCurrency(subjects.reduce((s, r) => s + Number(r.misc_fee || 0), 0)) }}
-                  </div>
+                  <div class="col-span-1 text-right">-</div>
+                  <div class="col-span-1 text-right">-</div>
                 </div>
               </div>
 
@@ -597,6 +589,7 @@ const setPaymentAmount = (percentage: number) => {
                 </div>
               </div>
             </div>
+
 
             <!-- Fees by Category (if any) -->
             <div v-if="feesByCategory.length" class="space-y-6">
