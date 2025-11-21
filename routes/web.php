@@ -61,6 +61,12 @@ Route::middleware(['auth', 'verified', 'role:admin,accounting'])->prefix('studen
     
     // Export PDF
     Route::get('/{user}/export-pdf', [StudentFeeController::class, 'exportPdf'])->name('student-fees.export-pdf');
+
+    // OBE Curriculum routes
+    Route::get('/curriculum/terms/{program}', [StudentFeeController::class, 'getAvailableTerms'])
+        ->name('student-fees.curriculum.terms');
+    Route::post('/curriculum/preview', [StudentFeeController::class, 'getCurriculumPreview'])
+        ->name('student-fees.curriculum.preview');
 });
 
 // Transaction routes
