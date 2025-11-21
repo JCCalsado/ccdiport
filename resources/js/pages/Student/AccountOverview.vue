@@ -1,15 +1,4 @@
 <script setup lang="ts">
-/**
- * Student Account Overview (IMPROVED)
- * Location: resources/js/pages/Student/AccountOverview.vue
- * 
- * Key improvements:
- * - Uses reusable composables and components
- * - Better tab management with URL sync
- * - Improved payment form validation
- * - Better error handling
- * - Cleaner computed properties
- */
 
 import { ref, computed, watch, onMounted } from 'vue'
 import { Head, Link, useForm } from '@inertiajs/vue3'
@@ -532,41 +521,7 @@ const setPaymentAmount = (percentage: number) => {
             </div>
 
             <form @submit.prevent="submitPayment" class="space-y-6">
-              <!-- Quick Payment Presets -->
-              <div v-if="remainingBalance > 0" class="space-y-2">
-                <Label>Quick Payment Amounts</Label>
-                <div class="grid grid-cols-4 gap-2">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    @click="setPaymentAmount(25)"
-                  >
-                    25%
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    @click="setPaymentAmount(50)"
-                  >
-                    50%
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    @click="setPaymentAmount(75)"
-                  >
-                    75%
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    @click="setPaymentAmount(100)"
-                  >
-                    Full
-                  </Button>
-                </div>
-              </div>
-
+              
               <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <!-- Amount -->
                 <div class="space-y-2">
