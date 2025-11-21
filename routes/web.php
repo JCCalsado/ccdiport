@@ -17,6 +17,7 @@ use App\Http\Controllers\NotificationController;
 use Illuminate\Support\Facades\Route;
 use Inertia\Inertia;
 use App\Http\Controllers\CurriculumController;
+use App\Http\Controllers\CurriculaController;
 
 Route::get('/', function () {
     return Inertia::render('Welcome');
@@ -72,10 +73,13 @@ Route::middleware(['auth', 'verified', 'role:admin,accounting'])->prefix('studen
 
 // Curriculum Management routes (admin/accounting only)
 Route::middleware(['auth', 'verified', 'role:admin,accounting'])->group(function () {
-    Route::resource('curricula', CurriculumController::class);
-    Route::post('curricula/{curriculum}/toggle-status', [CurriculumController::class, 'toggleStatus'])
+    // Use resource controller (this creates all CRUD routes)
+    Route::resource('curricula', CurriculaController::class);
+    
+    // Additional custom routes
+    Route::post('curricula/{curriculum}/toggle-status', [CurriculaController::class, 'toggleStatus'])
         ->name('curricula.toggleStatus');
-    Route::get('curricula/ajax/courses', [CurriculumController::class, 'getCourses'])
+    Route::get('curricula/ajax/courses', [CurriculaController::class, 'getCourses'])
         ->name('curricula.get-courses');
 });
 
