@@ -1,5 +1,4 @@
 <script setup lang="ts">
-
 import { ref, computed, watch, onMounted } from 'vue'
 import { Head, Link, useForm } from '@inertiajs/vue3'
 import AppLayout from '@/layouts/AppLayout.vue'
@@ -9,10 +8,9 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { useFormatters } from '@/composables/useFormatters'
-import type { Transaction, Account, Assessment, PaymentMethod } from '@/types/transaction'
+import type { PaymentMethod } from '@/types/transaction'
 import {
   CreditCard,
-  Calendar,
   CheckCircle,
   AlertCircle,
   Clock,
@@ -21,27 +19,83 @@ import {
   DollarSign,
 } from 'lucide-vue-next'
 
-interface Fee {
-  name: string
+/**
+ * Props expected from Laravel backend:
+ * - student: object (student meta)
+ * - account: object (account meta & balances)
+ * - assessment: object (current/latest assessment, totals, subjects array maybe)
+ * - assessmentLines: (provided but NOT used per user instruction)
+ * - termsOfPayment: object or array (schedule amounts)
+ *
+ * Additional props that the original components used (optional):
+ * - transactions: array of transaction objects
+ * - fees: array of fee objects
+ */
+
+interface SubjectLine {
+  subject_code?: string
+  description?: string
+  units?: number
+  tuition?: number
+  lab_fee?: number
+  misc_fee?: number
+  total?: number
+  semester?: string | number
+}
+
+interface Transaction {
+  id: number | string
+  kind: 'payment' | 'charge'
+  status?: string
   amount: number
-  category?: string
+  created_at?: string
+  reference?: string
+  type?: string
+  meta?: any
+  fee?: any
 }
 
 interface Props {
-  account: Account
-  transactions: Transaction[]
-  fees: Fee[]
+  student?: Record<string, any>
+  account?: Record<string, any>
+  assessment?: {
+    assessment_number?: string
+    school_year?: string
+    semester?: string
+    status?: string
+    total_assessment?: number
+    tuition_fee?: number
+    other_fees?: number
+    registration_fee?: number
+    lab_fee?: number
+    misc_fee?: number
+    registration?: number
+    upon_registration?: number
+    prelim?: number
+    midterm?: number
+    semi_final?: number
+    final?: number
+    subjects?: SubjectLine[] // optional, may not exist
+    total_units?: number
+  }
+  assessmentLines?: SubjectLine[] // provided but will NOT be used (per user)
+  termsOfPayment?: Record<string, number> | null
+  transactions?: Transaction[]
+  fees?: { name: string; amount: number; category?: string }[]
   currentTerm?: { year: number; semester: string }
   tab?: 'fees' | 'history' | 'payment'
-  latestAssessment?: Assessment
 }
 
 const props = withDefaults(defineProps<Props>(), {
-  currentTerm: () => ({
-    year: new Date().getFullYear(),
-    semester: '1st Sem'
-  }),
-  tab: 'fees'
+  student: () => ({}),
+  account: () => ({}),
+  assessment: () => ({}),
+  assessmentLines: () => ([]),
+  termsOfPayment: null,
+  transactions: () => ([]),
+  fees: () => ([]),
+  currentTerm: () => ({ year: new Date().getFullYear(), semester: '1st Sem' }),
+  tab: 'fees',
 })
 
 const { formatCurrency, formatDate, formatPercentage } = useFormatters()
@@ -55,18 +109,15 @@ const breadcrumbs = [
 const getTabFromUrl = (): 'fees' | 'history' | 'payment' => {
   const urlParams = new URLSearchParams(window.location.search)
   const tab = urlParams.get('tab')
-  return (tab === 'payment' || tab === 'history') ? tab : 'fees'
+  return (tab === 'payment' || tab === 'history') ? tab as any : 'fees'
 }
-
-const activeTab = ref<'fees' | 'history' | 'payment'>(
-  props.tab || getTabFromUrl()
-)
+const activeTab = ref<'fees' | 'history' | 'payment'>(props.tab || getTabFromUrl())
 
 // Dialog state
 const showDetailsDialog = ref(false)
 const selectedTransaction = ref<Transaction | null>(null)
 
-// Payment Form
+// Payment Form (Inertia)
 const paymentForm = useForm({
   amount: 0,
   payment_method: 'cash' as PaymentMethod,
@@ -75,95 +126,122 @@ const paymentForm = useForm({
   description: 'Payment for fees',
 })
 
-// Computed: Assessment totals
+// assessment alias (use only the provided assessment prop — do NOT use assessmentLines)
+const latestAssessment = computed(() => props.assessment || {})
+
+// Computed: totalAssessmentFee prefer explicit field else compute from fees or assessment fields
 const totalAssessmentFee = computed(() => {
-  return props.latestAssessment?.total_assessment ?? 
-    props.fees.reduce((sum, fee) => sum + Number(fee.amount), 0)
+  if (typeof latestAssessment.value.total_assessment === 'number') {
+    return latestAssessment.value.total_assessment
+  }
+  // fallback compute from tuition + others if present
+  const tuition = Number(latestAssessment.value.tuition_fee || 0)
+  const other = Number(latestAssessment.value.other_fees || 0)
+  const reg = Number(latestAssessment.value.registration_fee || 0)
+  const lab = Number(latestAssessment.value.lab_fee || 0)
+  const misc = Number(latestAssessment.value.misc_fee || 0)
+  if (tuition || other || reg || lab || misc) {
+    return Math.round((tuition + other + reg + lab + misc) * 100) / 100
+  }
+  // final fallback to fees prop
+  return props.fees?.reduce((s, f) => s + Number(f.amount || 0), 0) ?? 0
 })
 
+// computed: subjects list — DO NOT use assessmentLines; use assessment.subjects if available
+const subjects = computed<SubjectLine[]>(() => {
+  if (Array.isArray(latestAssessment.value.subjects) && latestAssessment.value.subjects.length) {
+    return latestAssessment.value.subjects.map((s: any) => ({
+      subject_code: s.subject_code ?? s.code ?? s.code_number ?? '',
+      description: s.description ?? s.title ?? s.name ?? '',
+      units: Number(s.units ?? s.unit ?? 0),
+      tuition: Number(s.tuition ?? 0),
+      lab_fee: Number(s.lab_fee ?? s.lab ?? 0),
+      misc_fee: Number(s.misc_fee ?? s.misc ?? 0),
+      total: Number(s.total ?? (s.tuition ?? 0) + (s.lab_fee ?? 0) + (s.misc_fee ?? 0)),
+      semester: s.semester ?? latestAssessment.value.semester ?? '',
+    }))
+  }
+  // If assessment.subjects does not exist, return empty array (we were instructed not to use assessmentLines)
+  return []
+})
+
+const totalUnits = computed(() => {
+  if (typeof latestAssessment.value.total_units === 'number') return latestAssessment.value.total_units
+  return subjects.value.reduce((s, r) => s + Number(r.units || 0), 0)
+})
+
+// Computed: Payment totals from transactions (if provided)
 const totalPaid = computed(() => {
-  return props.transactions
+  return (props.transactions ?? [])
     .filter(t => t.kind === 'payment' && t.status === 'paid')
-    .reduce((sum, t) => sum + Number(t.amount), 0)
+    .reduce((sum, t) => sum + Number(t.amount || 0), 0)
 })
 
 const remainingBalance = computed(() => {
-  const charges = props.transactions
+  const charges = (props.transactions ?? [])
     .filter(t => t.kind === 'charge')
     .reduce((sum, t) => sum + Number(t.amount || 0), 0)
-
-  const payments = props.transactions
+  const payments = (props.transactions ?? [])
     .filter(t => t.kind === 'payment' && t.status === 'paid')
     .reduce((sum, t) => sum + Number(t.amount || 0), 0)
-
   const diff = charges - payments
+  // If transactions not provided, fallback to assessment totals - payments
+  if ((props.transactions ?? []).length === 0) {
+    const assessed = totalAssessmentFee.value
+    return Math.max(0, Math.round((assessed - totalPaid.value) * 100) / 100)
+  }
   return Math.max(0, Math.round(diff * 100) / 100)
 })
 
-// Computed: Payment percentage
 const paymentPercentage = computed(() => {
   if (totalAssessmentFee.value === 0) return 0
   return Math.min(100, Math.round((totalPaid.value / totalAssessmentFee.value) * 100))
 })
 
-// Computed: Grouped fees by category
+// Grouped fees by category (fallback to props.fees)
 const feesByCategory = computed(() => {
-  const grouped = props.fees.reduce((acc, fee) => {
-    const category = fee.category || 'Other'
-    if (!acc[category]) acc[category] = []
-    acc[category].push(fee)
+  const list = props.fees ?? []
+  const grouped = list.reduce((acc: Record<string, any[]>, fee) => {
+    const cat = fee.category || 'Other'
+    acc[cat] = acc[cat] ?? []
+    acc[cat].push(fee)
     return acc
-  }, {} as Record<string, Fee[]>)
-  
-  return Object.entries(grouped).map(([category, fees]) => ({
+  }, {})
+  return Object.entries(grouped).map(([category, arr]) => ({
     category,
-    fees,
-    total: fees.reduce((sum, f) => sum + Number(f.amount), 0)
+    fees: arr,
+    total: arr.reduce((s, f) => s + Number(f.amount || 0), 0),
   }))
 })
 
-// Computed: Payment history
+// Payment history and pending charges (from transactions)
 const paymentHistory = computed(() => {
-  return props.transactions
+  return (props.transactions ?? [])
     .filter(t => t.kind === 'payment')
-    .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+    .sort((a, b) => (new Date(b.created_at || '').getTime() - new Date(a.created_at || '').getTime()))
 })
 
-// Computed: Pending charges
 const pendingCharges = computed(() => {
-  return props.transactions
+  return (props.transactions ?? [])
     .filter(t => t.kind === 'charge' && t.status === 'pending')
 })
 
-// Computed: Can submit payment
 const canSubmitPayment = computed(() => {
-  return remainingBalance.value > 0 && 
-    paymentForm.amount > 0 && 
+  return remainingBalance.value > 0 &&
+    paymentForm.amount > 0 &&
     paymentForm.amount <= remainingBalance.value &&
     !paymentForm.processing
 })
 
-// Computed: Payment form errors
 const paymentFormErrors = computed(() => {
   const errors: string[] = []
-  
-  if (paymentForm.amount <= 0) {
-    errors.push('Amount must be greater than zero')
-  }
-  if (paymentForm.amount > remainingBalance.value) {
-    errors.push('Amount cannot exceed remaining balance')
-  }
-  if (!paymentForm.payment_method) {
-    errors.push('Please select a payment method')
-  }
-  if (!paymentForm.paid_at) {
-    errors.push('Please select a payment date')
-  }
-  
+  if (paymentForm.amount <= 0) errors.push('Amount must be greater than zero')
+  if (paymentForm.amount > remainingBalance.value) errors.push('Amount cannot exceed remaining balance')
+  if (!paymentForm.payment_method) errors.push('Please select a payment method')
+  if (!paymentForm.paid_at) errors.push('Please select a payment date')
   return errors
 })
 
-// Watch for tab changes
 watch(() => props.tab, (newTab) => {
   if (newTab) activeTab.value = newTab
 })
@@ -173,21 +251,18 @@ onMounted(() => {
   if (urlTab) activeTab.value = urlTab
 })
 
-// Methods
 const viewTransaction = (transaction: Transaction) => {
   selectedTransaction.value = transaction
   showDetailsDialog.value = true
 }
 
 const handlePayNow = (transaction: Transaction) => {
-  // Pre-fill payment form with transaction data
   paymentForm.amount = transaction.amount
-  paymentForm.description = `Payment for ${transaction.type}`
+  paymentForm.description = `Payment for ${transaction.type || transaction.meta?.description || 'Charge'}`
   activeTab.value = 'payment'
 }
 
 const submitPayment = () => {
-  // Validate form
   if (!canSubmitPayment.value) {
     if (paymentFormErrors.value.length > 0) {
       paymentForm.setError('amount', paymentFormErrors.value[0])
@@ -198,14 +273,11 @@ const submitPayment = () => {
   paymentForm.post(route('account.pay-now'), {
     preserveScroll: true,
     onSuccess: () => {
-      // Reset form
       paymentForm.reset()
       paymentForm.amount = 0
       paymentForm.payment_method = 'cash'
       paymentForm.paid_at = new Date().toISOString().split('T')[0]
       paymentForm.description = 'Payment for fees'
-      
-      // Switch to history tab
       activeTab.value = 'history'
     },
     onError: (errors) => {
@@ -215,11 +287,9 @@ const submitPayment = () => {
 }
 
 const downloadPDF = () => {
-  // Implement download logic
   console.log('Download PDF')
 }
 
-// Quick payment presets
 const setPaymentAmount = (percentage: number) => {
   paymentForm.amount = Math.round(remainingBalance.value * (percentage / 100) * 100) / 100
 }
@@ -238,8 +308,11 @@ const setPaymentAmount = (percentage: number) => {
         <p v-if="currentTerm" class="text-gray-600 mt-1">
           {{ currentTerm.semester }} - {{ currentTerm.year }}-{{ currentTerm.year + 1 }}
         </p>
-        <p v-if="latestAssessment" class="text-sm text-gray-500 mt-1">
+        <p v-if="latestAssessment.assessment_number" class="text-sm text-gray-500 mt-1">
           Assessment No: {{ latestAssessment.assessment_number }}
+        </p>
+        <p v-else-if="props.account?.account_number" class="text-sm text-gray-500 mt-1">
+          Account No: {{ props.account.account_number }}
         </p>
       </div>
 
@@ -256,9 +329,9 @@ const setPaymentAmount = (percentage: number) => {
           <p class="text-3xl font-bold text-blue-600">
             {{ formatCurrency(totalAssessmentFee) }}
           </p>
-          <p v-if="latestAssessment" class="text-xs text-gray-500 mt-2">
-            Tuition: {{ formatCurrency(latestAssessment.tuition_fee) }} • 
-            Other: {{ formatCurrency(latestAssessment.other_fees) }}
+          <p v-if="latestAssessment.tuition_fee || latestAssessment.other_fees" class="text-xs text-gray-500 mt-2">
+            Tuition: {{ formatCurrency(latestAssessment.tuition_fee || 0) }} •
+            Other: {{ formatCurrency(latestAssessment.other_fees || 0) }}
           </p>
         </div>
 
@@ -285,10 +358,10 @@ const setPaymentAmount = (percentage: number) => {
               'p-3 rounded-lg',
               remainingBalance > 0 ? 'bg-red-100' : 'bg-green-100'
             ]">
-              <component 
-                :is="remainingBalance > 0 ? AlertCircle : CheckCircle" 
-                :size="24" 
-                :class="remainingBalance > 0 ? 'text-red-600' : 'text-green-600'" 
+              <component
+                :is="remainingBalance > 0 ? AlertCircle : CheckCircle"
+                :size="24"
+                :class="remainingBalance > 0 ? 'text-red-600' : 'text-green-600'"
               />
             </div>
           </div>
@@ -367,12 +440,12 @@ const setPaymentAmount = (percentage: number) => {
 
         <!-- Tab Content -->
         <div class="p-6">
-          <!-- Fees Tab -->
+          <!-- Fees Tab - design of Version 1, layout/look of Version 2 -->
           <div v-if="activeTab === 'fees'" class="space-y-6">
             <h2 class="text-lg font-semibold">CURRENT ASSESSMENT</h2>
-            
+
             <!-- Assessment Info Banner -->
-            <div v-if="latestAssessment" class="bg-blue-50 rounded-lg p-4 border border-blue-200">
+            <div v-if="latestAssessment.assessment_number" class="bg-blue-50 rounded-lg p-4 border border-blue-200">
               <div class="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
                 <div>
                   <span class="text-gray-600">Assessment No:</span>
@@ -380,11 +453,11 @@ const setPaymentAmount = (percentage: number) => {
                 </div>
                 <div>
                   <span class="text-gray-600">School Year:</span>
-                  <p class="font-semibold">{{ latestAssessment.school_year }}</p>
+                  <p class="font-semibold">{{ latestAssessment.school_year || currentTerm?.year }}</p>
                 </div>
                 <div>
                   <span class="text-gray-600">Semester:</span>
-                  <p class="font-semibold">{{ latestAssessment.semester }}</p>
+                  <p class="font-semibold">{{ latestAssessment.semester || currentTerm?.semester }}</p>
                 </div>
                 <div>
                   <span class="text-gray-600">Status:</span>
@@ -392,13 +465,140 @@ const setPaymentAmount = (percentage: number) => {
                     'px-2 py-1 text-xs font-semibold rounded-full',
                     latestAssessment.status === 'active' ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'
                   ]">
-                    {{ latestAssessment.status }}
+                    {{ latestAssessment.status || 'unknown' }}
                   </span>
                 </div>
               </div>
             </div>
 
-            <!-- Fees by Category -->
+            <!-- Certificate of Matriculation (subjects table) -->
+            <div class="bg-white rounded-lg border p-4">
+              <h3 class="font-semibold text-gray-700 mb-3">CERTIFICATE OF MATRICULATION FORM</h3>
+
+              <!-- Basic Info -->
+              <div class="grid grid-cols-2 gap-4 mb-4 text-sm">
+                <div>
+                  <div class="text-gray-600">Name</div>
+                  <div class="font-semibold">{{ props.student?.full_name || props.account?.student_name || 'Student Name' }}</div>
+                </div>
+                <div>
+                  <div class="text-gray-600">Sem/Summer</div>
+                  <div class="font-semibold">{{ currentTerm?.semester || latestAssessment.semester || '1st Sem' }}</div>
+                </div>
+
+                <div>
+                  <div class="text-gray-600">Course & Yr.</div>
+                  <div class="font-semibold">{{ props.account?.course || props.student?.course || '-' }}</div>
+                </div>
+                <div>
+                  <div class="text-gray-600">School Year</div>
+                  <div class="font-semibold">{{ latestAssessment.school_year || currentTerm?.year }}</div>
+                </div>
+
+                <div>
+                  <div class="text-gray-600">Major</div>
+                  <div class="font-semibold">{{ props.student?.major || '-' }}</div>
+                </div>
+                <div>
+                  <div class="text-gray-600">Registration Date</div>
+                  <div class="font-semibold">{{ props.account?.registered_at ? formatDate(props.account.registered_at) : '-' }}</div>
+                </div>
+              </div>
+
+              <!-- Subjects Table Header -->
+              <div class="grid grid-cols-7 gap-2 text-xs font-semibold border-t pt-2 pb-2">
+                <div class="col-span-1">Subject Code</div>
+                <div class="col-span-3">Description</div>
+                <div class="col-span-1 text-center">Units</div>
+                <div class="col-span-1 text-right">Tuition</div>
+                <div class="col-span-1 text-right">Lab Fee</div>
+                <div class="col-span-1 text-right">Misc Fee</div>
+              </div>
+
+              <!-- Subjects Rows -->
+              <div v-if="subjects.length" class="divide-y">
+                <div
+                  v-for="(row, idx) in subjects"
+                  :key="`sub-${idx}-${row.subject_code}`"
+                  class="grid grid-cols-7 gap-2 py-2 text-sm items-center"
+                >
+                  <div class="col-span-1">{{ row.subject_code }}</div>
+                  <div class="col-span-3">{{ row.description }}</div>
+                  <div class="col-span-1 text-center">{{ row.units }}</div>
+                  <div class="col-span-1 text-right">{{ formatCurrency(row.tuition || 0) }}</div>
+                  <div class="col-span-1 text-right">{{ formatCurrency(row.lab_fee || 0) }}</div>
+                  <div class="col-span-1 text-right">{{ formatCurrency(row.misc_fee || 0) }}</div>
+                </div>
+
+                <!-- Totals Row (aligned with header) -->
+                <div class="grid grid-cols-7 gap-2 pt-3 font-semibold">
+                  <div class="col-span-1"></div>
+                  <div class="col-span-3 text-right">Total:</div>
+                  <div class="col-span-1 text-center">{{ totalUnits }}</div>
+                  <div class="col-span-1 text-right">
+                    {{ formatCurrency(subjects.reduce((s, r) => s + Number(r.tuition || 0), 0)) }}
+                  </div>
+                  <div class="col-span-1 text-right">
+                    {{ formatCurrency(subjects.reduce((s, r) => s + Number(r.lab_fee || 0), 0)) }}
+                  </div>
+                  <div class="col-span-1 text-right">
+                    {{ formatCurrency(subjects.reduce((s, r) => s + Number(r.misc_fee || 0), 0)) }}
+                  </div>
+                </div>
+              </div>
+
+              <div v-else class="py-6 text-center text-gray-500">
+                No subjects available for this assessment.
+              </div>
+
+              <!-- Fees Summary -->
+              <div class="mt-4 border-t pt-3">
+                <div class="flex justify-between py-1 text-sm">
+                  <div>Registration Fee</div>
+                  <div>{{ formatCurrency(latestAssessment.registration_fee || latestAssessment.registration || 0) }}</div>
+                </div>
+                <div class="flex justify-between py-1 text-sm">
+                  <div>Tuition Fee</div>
+                  <div>{{ formatCurrency(latestAssessment.tuition_fee || 0) }}</div>
+                </div>
+                <div class="flex justify-between py-1 text-sm">
+                  <div>Lab Fee</div>
+                  <div>{{ formatCurrency(latestAssessment.lab_fee || 0) }}</div>
+                </div>
+                <div class="flex justify-between py-1 text-sm">
+                  <div>Misc. Fee</div>
+                  <div>{{ formatCurrency(latestAssessment.misc_fee || 0) }}</div>
+                </div>
+
+                <div class="flex justify-between py-2 text-lg font-bold border-t mt-2">
+                  <div>Total Assessment Fee</div>
+                  <div class="text-blue-600">{{ formatCurrency(totalAssessmentFee) }}</div>
+                </div>
+              </div>
+
+              <!-- Terms of Payment -->
+              <div class="mt-6">
+                <h4 class="font-semibold mb-2">Terms of Payment</h4>
+                <div class="grid grid-cols-2 gap-4 max-w-md text-sm">
+                  <div>Upon Registration</div>
+                  <div class="text-right">{{ formatCurrency(latestAssessment.upon_registration ?? latestAssessment.registration ?? (props.termsOfPayment?.registration ?? 0)) }}</div>
+
+                  <div>Prelim</div>
+                  <div class="text-right">{{ formatCurrency(latestAssessment.prelim ?? (props.termsOfPayment?.prelim ?? 0)) }}</div>
+
+                  <div>Midterm</div>
+                  <div class="text-right">{{ formatCurrency(latestAssessment.midterm ?? (props.termsOfPayment?.midterm ?? 0)) }}</div>
+
+                  <div>Semi-Final</div>
+                  <div class="text-right">{{ formatCurrency(latestAssessment.semi_final ?? (props.termsOfPayment?.semi_final ?? 0)) }}</div>
+
+                  <div>Final</div>
+                  <div class="text-right">{{ formatCurrency(latestAssessment.final ?? (props.termsOfPayment?.final ?? 0)) }}</div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Fees by Category (if any) -->
             <div v-if="feesByCategory.length" class="space-y-6">
               <div v-for="categoryGroup in feesByCategory" :key="categoryGroup.category" class="space-y-2">
                 <h3 class="font-semibold text-gray-700 uppercase text-sm border-b pb-2">
@@ -423,55 +623,12 @@ const setPaymentAmount = (percentage: number) => {
                 <span class="text-blue-600">{{ formatCurrency(totalAssessmentFee) }}</span>
               </div>
             </div>
-
-            <p v-else class="text-gray-500 text-center py-4">
-              No fees assigned yet.
-            </p>
-
-            <!-- Pending Charges -->
-            <div v-if="pendingCharges.length" class="border-t pt-6">
-              <h3 class="text-md font-semibold mb-4 text-red-700 flex items-center gap-2">
-                <Clock :size="20" />
-                PENDING CHARGES
-              </h3>
-              <div class="space-y-3">
-                <div
-                  v-for="charge in pendingCharges"
-                  :key="charge.id"
-                  class="flex justify-between items-center p-3 bg-red-50 rounded border border-red-200 cursor-pointer hover:bg-red-100"
-                  @click="viewTransaction(charge)"
-                >
-                  <div>
-                    <p class="font-medium text-gray-900">
-                      {{ charge.fee?.name || charge.meta?.fee_name || charge.meta?.subject_name || charge.type }}
-                    </p>
-                    <p class="text-xs text-gray-600">{{ charge.reference }}</p>
-                    <p v-if="charge.meta?.subject_code" class="text-xs text-gray-500">
-                      {{ charge.meta.subject_code }}
-                    </p>
-                  </div>
-                  <div class="text-right flex flex-col items-end gap-2">
-                    <div>
-                      <p class="text-lg font-semibold text-red-600">{{ formatCurrency(charge.amount) }}</p>
-                      <span class="text-xs px-2 py-1 bg-yellow-100 text-yellow-800 rounded">Pending</span>
-                    </div>
-                    <Button
-                      size="sm"
-                      variant="destructive"
-                      @click.stop="handlePayNow(charge)"
-                    >
-                      Pay Now
-                    </Button>
-                  </div>
-                </div>
-              </div>
-            </div>
           </div>
 
-          <!-- Payment History Tab -->
+          <!-- Payment History -->
           <div v-if="activeTab === 'history'" class="space-y-4">
             <h2 class="text-lg font-semibold">Payment History</h2>
-            
+
             <div v-if="paymentHistory.length" class="space-y-3">
               <div
                 v-for="payment in paymentHistory"
@@ -507,11 +664,10 @@ const setPaymentAmount = (percentage: number) => {
             </div>
           </div>
 
-          <!-- Payment Form Tab -->
+          <!-- Payment Form -->
           <div v-if="activeTab === 'payment'" class="space-y-6">
             <h2 class="text-2xl font-bold">Add New Payment</h2>
-            
-            <!-- No Balance Message -->
+
             <div v-if="remainingBalance <= 0" class="p-4 bg-green-50 border border-green-200 rounded-lg">
               <div class="flex items-center gap-2">
                 <CheckCircle :size="20" class="text-green-600" />
@@ -521,9 +677,7 @@ const setPaymentAmount = (percentage: number) => {
             </div>
 
             <form @submit.prevent="submitPayment" class="space-y-6">
-              
               <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <!-- Amount -->
                 <div class="space-y-2">
                   <Label for="amount">Amount *</Label>
                   <Input
@@ -537,15 +691,10 @@ const setPaymentAmount = (percentage: number) => {
                     required
                     :disabled="remainingBalance <= 0"
                   />
-                  <p class="text-xs text-gray-500">
-                    Maximum: {{ formatCurrency(remainingBalance) }}
-                  </p>
-                  <p v-if="paymentForm.errors.amount" class="text-red-500 text-sm">
-                    {{ paymentForm.errors.amount }}
-                  </p>
+                  <p class="text-xs text-gray-500">Maximum: {{ formatCurrency(remainingBalance) }}</p>
+                  <p v-if="paymentForm.errors.amount" class="text-red-500 text-sm">{{ paymentForm.errors.amount }}</p>
                 </div>
 
-                <!-- Payment Method -->
                 <div class="space-y-2">
                   <Label for="payment_method">Payment Method *</Label>
                   <select
@@ -560,64 +709,35 @@ const setPaymentAmount = (percentage: number) => {
                     <option value="credit_card">Credit Card</option>
                     <option value="debit_card">Debit Card</option>
                   </select>
-                  <p v-if="paymentForm.errors.payment_method" class="text-red-500 text-sm">
-                    {{ paymentForm.errors.payment_method }}
-                  </p>
+                  <p v-if="paymentForm.errors.payment_method" class="text-red-500 text-sm">{{ paymentForm.errors.payment_method }}</p>
                 </div>
 
-                <!-- Reference Number Info -->
                 <div class="space-y-2">
-                  <Label>
-                    Reference Number
-                    <span class="text-xs text-gray-500">(Auto-generated)</span>
-                  </Label>
-                  <Input
-                    value="System will generate after submission"
-                    disabled
-                    class="bg-gray-100 cursor-not-allowed text-gray-500"
-                  />
-                  <p class="text-xs text-gray-500">
-                    Reference number will be automatically generated
-                  </p>
+                  <Label>Reference Number <span class="text-xs text-gray-500">(Auto-generated)</span></Label>
+                  <Input value="System will generate after submission" disabled class="bg-gray-100 cursor-not-allowed text-gray-500" />
+                  <p class="text-xs text-gray-500">Reference number will be automatically generated</p>
                 </div>
 
-                <!-- Payment Date -->
                 <div class="space-y-2">
                   <Label for="paid_at">Payment Date *</Label>
-                  <Input
-                    id="paid_at"
-                    v-model="paymentForm.paid_at"
-                    type="date"
-                    required
-                    :disabled="remainingBalance <= 0"
-                  />
-                  <p v-if="paymentForm.errors.paid_at" class="text-red-500 text-sm">
-                    {{ paymentForm.errors.paid_at }}
-                  </p>
+                  <Input id="paid_at" v-model="paymentForm.paid_at" type="date" required :disabled="remainingBalance <= 0" />
+                  <p v-if="paymentForm.errors.paid_at" class="text-red-500 text-sm">{{ paymentForm.errors.paid_at }}</p>
                 </div>
 
-                <!-- Description -->
                 <div class="md:col-span-2 space-y-2">
                   <Label for="description">Description *</Label>
-                  <Input
-                    id="description"
-                    v-model="paymentForm.description"
-                    placeholder="Payment description"
-                    required
-                    :disabled="remainingBalance <= 0"
-                  />
-                  <p v-if="paymentForm.errors.description" class="text-red-500 text-sm">
-                    {{ paymentForm.errors.description }}
-                  </p>
+                  <Input id="description" v-model="paymentForm.description" placeholder="Payment description" required :disabled="remainingBalance <= 0" />
+                  <p v-if="paymentForm.errors.description" class="text-red-500 text-sm">{{ paymentForm.errors.description }}</p>
                 </div>
               </div>
 
-              <!-- Submit Button -->
-              <Button
-                type="submit"
-                class="w-full"
-                :disabled="!canSubmitPayment || paymentForm.processing"
-              >
+              <div class="flex gap-2">
+                <Button type="button" variant="ghost" class="flex-1" @click="setPaymentAmount(25)">25%</Button>
+                <Button type="button" variant="ghost" class="flex-1" @click="setPaymentAmount(50)">50%</Button>
+                <Button type="button" variant="ghost" class="flex-1" @click="setPaymentAmount(100)">Pay All</Button>
+              </div>
+
+              <Button type="submit" class="w-full" :disabled="!canSubmitPayment || paymentForm.processing">
                 <DollarSign v-if="!paymentForm.processing" class="w-4 h-4 mr-2" />
                 <span v-if="paymentForm.processing">Processing...</span>
                 <span v-else-if="remainingBalance <= 0">No Balance to Pay</span>
@@ -640,3 +760,8 @@ const setPaymentAmount = (percentage: number) => {
     />
   </AppLayout>
 </template>
+
+<style scoped>
+/* small styling tweaks to match Version 1 visual feel while using Version 2 table layout */
+.font-mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, "Roboto Mono", "Segoe UI Mono", "Noto Mono", monospace; }
+</style>
