@@ -164,32 +164,7 @@ const getStatusColor = (isActive: boolean) => {
             </div>
           </div>
         </div>
-
-        <div class="bg-white rounded-lg shadow p-6">
-          <div class="flex items-center justify-between">
-            <div>
-              <p class="text-sm text-gray-600">School Years</p>
-              <p class="text-2xl font-bold">{{ schoolYears.length }}</p>
-            </div>
-            <div class="p-3 bg-purple-100 rounded-lg">
-              <FileText class="w-6 h-6 text-purple-600" />
-            </div>
-          </div>
-        </div>
-
-        <div class="bg-white rounded-lg shadow p-6">
-          <div class="flex items-center justify-between">
-            <div>
-              <p class="text-sm text-gray-600">Avg Assessment</p>
-              <p class="text-2xl font-bold">
-                {{ formatCurrency(curricula.data.reduce((sum, c) => sum + c.total_assessment, 0) / (curricula.data.length || 1)) }}
-              </p>
-            </div>
-            <div class="p-3 bg-yellow-100 rounded-lg">
-              <Calculator class="w-6 h-6 text-yellow-600" />
-            </div>
-          </div>
-        </div>
+        
       </div>
 
       <!-- Filters -->
