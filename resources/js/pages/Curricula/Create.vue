@@ -15,6 +15,7 @@ import {
   Calculator,
   Info
 } from 'lucide-vue-next'
+import { Alert, AlertTitle, AlertDescription } from '@/components/ui/alert';
 
 interface Program {
   id: number

@@ -1,18 +1,22 @@
 <script setup>
 import { computed } from 'vue';
-import { cn } from '../utils/cn';
+import { cn } from './utils/cn';
 
-defineProps({
+const props = defineProps({
   class: {
     type: String,
     default: '',
   },
 });
+
+const classes = computed(() =>
+  cn('w-full caption-bottom text-sm', props.class)
+);
 </script>
 
 <template>
   <div class="relative w-full overflow-auto">
-    <table :class="cn('w-full caption-bottom text-sm', $props.class)">
+    <table :class="classes">
       <slot />
     </table>
   </div>

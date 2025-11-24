@@ -1,17 +1,16 @@
-<script setup lang="ts">
-import type { HTMLAttributes } from 'vue'
-import { cn } from '@/lib/utils'
+<script setup>
+import { cn } from '../utils/cn';
 
-const props = defineProps<{
-  class?: HTMLAttributes['class']
-}>()
+defineProps({
+  class: {
+    type: String,
+    default: '',
+  },
+});
 </script>
 
 <template>
-  <p
-    data-slot="card-description"
-    :class="cn('text-muted-foreground text-sm', props.class)"
-  >
+  <p :class="cn('text-sm text-slate-500', $props.class)">
     <slot />
   </p>
 </template>

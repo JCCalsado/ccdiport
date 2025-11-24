@@ -275,10 +275,6 @@ const submitPayment = () => {
 const downloadPDF = () => {
   console.log('Download PDF')
 }
-
-const setPaymentAmount = (percentage: number) => {
-  paymentForm.amount = Math.round(remainingBalance.value * (percentage / 100) * 100) / 100
-}
 </script>
 
 <template>
@@ -721,12 +717,6 @@ const setPaymentAmount = (percentage: number) => {
                   <Input id="description" v-model="paymentForm.description" placeholder="Payment description" required :disabled="remainingBalance <= 0" />
                   <p v-if="paymentForm.errors.description" class="text-red-500 text-sm">{{ paymentForm.errors.description }}</p>
                 </div>
-              </div>
-
-              <div class="flex gap-2">
-                <Button type="button" variant="ghost" class="flex-1" @click="setPaymentAmount(25)">25%</Button>
-                <Button type="button" variant="ghost" class="flex-1" @click="setPaymentAmount(50)">50%</Button>
-                <Button type="button" variant="ghost" class="flex-1" @click="setPaymentAmount(100)">Pay All</Button>
               </div>
 
               <Button type="submit" class="w-full" :disabled="!canSubmitPayment || paymentForm.processing">
