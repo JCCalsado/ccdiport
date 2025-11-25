@@ -9,7 +9,6 @@ use App\Models\User;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 use Illuminate\Support\Str;
-use App\Services\AccountService;
 
 class TransactionController extends Controller
 {
@@ -17,14 +16,18 @@ class TransactionController extends Controller
     {
         $user = $request->user();
 
-        // Admins & accounting see all, students see their own
-        if (in_array($user->role->value, ['super_admin', 'admin', 'accounting'])) {
+        // Role is a STRING, not an enum
+        $adminRoles = ['super_admin', 'admin', 'accounting'];
+
+        if (in_array($user->role, $adminRoles)) {
+            // Admin/accounting: all transactions
             $transactions = Transaction::with('user')
                 ->orderByDesc('year')
                 ->orderBy('semester')
                 ->get()
                 ->groupBy(fn($txn) => "{$txn->year} {$txn->semester}");
         } else {
+            // Students: only their own
             $transactions = $user->transactions()
                 ->with('user')
                 ->orderByDesc('year')
@@ -34,16 +37,16 @@ class TransactionController extends Controller
         }
 
         return Inertia::render('Transactions/Index', [
-            'auth' => ['user' => $user],
+            'auth'               => ['user' => $user],
             'transactionsByTerm' => $transactions,
-            'account' => $user->account,
-            'currentTerm' => $this->getCurrentTerm(),
+            'account'            => $user->account,
+            'currentTerm'        => $this->getCurrentTerm(),
         ]);
     }
 
     private function getCurrentTerm(): string
     {
-        $year = now()->year;
+        $year  = now()->year;
         $month = now()->month;
 
         if ($month >= 6 && $month <= 10) {
@@ -56,42 +59,42 @@ class TransactionController extends Controller
 
         return "{$year} {$semester}";
     }
+
     public function create()
     {
-        $users = User::select('id', 'name', 'email')->get();
-
         return Inertia::render('Transactions/Create', [
-            'users' => $users,
+            'users' => User::select('id', 'name', 'email')->get(),
         ]);
     }
 
     public function store(Request $request)
     {
-        // Only staff can create transactions
-        if (!in_array($request->user()->role->value, ['super_admin', 'admin', 'accounting'])) {
+        // FIX: role is string → remove ->value
+        if (!in_array($request->user()->role, ['super_admin', 'admin', 'accounting'])) {
             abort(403, 'Unauthorized action.');
         }
 
         $data = $request->validate([
-            'user_id' => 'required|exists:users,id',
-            'amount' => 'required|numeric|min:0.01',
-            'type' => 'required|in:charge,payment',
+            'user_id'         => 'required|exists:users,id',
+            'amount'          => 'required|numeric|min:0.01',
+            'type'            => 'required|in:charge,payment',
             'payment_channel' => 'nullable|string',
         ]);
 
         $transaction = Transaction::create([
-            'user_id' => $data['user_id'],
-            'reference' => 'SYS-' . Str::upper(Str::random(8)),
-            'amount' => $data['amount'],
-            'type' => $data['type'],
-            'status' => $data['type'] === 'payment' ? 'paid' : 'pending',
-            'payment_channel' => $data['payment_channel'] ?? null,
+            'user_id'         => $data['user_id'],
+            'reference'       => 'SYS-' . Str::upper(Str::random(8)),
+            'amount'          => $data['amount'],
+            'type'            => $data['type'],
+            'kind'            => $data['type'], // normalize
+            'status'          => $data['type'] === 'payment' ? 'paid' : 'pending',
+            'payment_channel' => $data['payment_channel'],
         ]);
 
-        // Recalculate balance
         $this->recalculateAccount($transaction->user);
 
-        return redirect()->route('transactions.index')
+        return redirect()
+            ->route('transactions.index')
             ->with('success', 'Transaction created successfully!');
     }
 
@@ -101,51 +104,52 @@ class TransactionController extends Controller
             'transaction' => $transaction->load('user'),
         ]);
     }
-    
+
     public function payNow(Request $request)
     {
         $user = $request->user();
 
         $data = $request->validate([
-            'amount' => 'required|numeric|min:0.01',
-            'payment_method' => 'required|string',
+            'amount'           => 'required|numeric|min:0.01',
+            'payment_method'   => 'required|string',
             'reference_number' => 'nullable|string',
-            'paid_at' => 'required|date',
-            'description' => 'required|string',
+            'paid_at'          => 'required|date',
+            'description'      => 'required|string',
         ]);
 
-        $tx = Transaction::create([
-            'user_id' => $user->id,
-            'reference' => 'PAY-' . Str::upper(Str::random(8)),
-            'kind' => 'payment',
-            'type' => 'Payment',
-            'amount' => $data['amount'],
-            'status' => 'paid',
+        $transaction = Transaction::create([
+            'user_id'         => $user->id,
+            'reference'       => 'PAY-' . Str::upper(Str::random(8)),
+            'kind'            => 'payment',
+            'type'            => 'Payment',
+            'amount'          => $data['amount'],
+            'status'          => 'paid',
             'payment_channel' => $data['payment_method'],
-            'paid_at' => $data['paid_at'],
+            'paid_at'         => $data['paid_at'],
             'meta' => [
-                'reference_number' => $data['reference_number'] ?? null,
-                'description' => $data['description'],
+                'reference_number' => $data['reference_number'] ?: null,
+                'description'      => $data['description'],
             ],
         ]);
 
-        // Update account balance
+        // Update balance
         $this->recalculateAccount($user);
 
-        // ✅ Only check promotion if user has a student profile
-        if ($user->role->value === 'student' && $user->student) {
+        // Promote student if fully paid
+        if ($user->role === 'student' && $user?->student) {
             $this->checkAndPromoteStudent($user->student);
         }
 
-        return redirect()->route('student.account')
+        return redirect()
+            ->route('student.account')
             ->with('success', 'Payment recorded successfully.');
     }
 
     protected function recalculateAccount($user): void
     {
-        $charges = $user->transactions()->where('kind', 'charge')->sum('amount');
+        $charges  = $user->transactions()->where('kind', 'charge')->sum('amount');
         $payments = $user->transactions()->where('kind', 'payment')->where('status', 'paid')->sum('amount');
-        $balance = $charges - $payments;
+        $balance  = $charges - $payments;
 
         $account = $user->account ?? $user->account()->create();
         $account->update(['balance' => $balance]);
@@ -153,16 +157,11 @@ class TransactionController extends Controller
 
     protected function checkAndPromoteStudent($student)
     {
-        if (!$student) {
+        if (!$student || !$student->user) {
             return;
         }
 
-        $user = $student->user;
-        if (!$user) {
-            return;
-        }
-
-        $account = $user->account;
+        $account = $student->user->account;
 
         if ($account && $account->balance <= 0) {
             $this->promoteYearLevel($student);
@@ -173,35 +172,38 @@ class TransactionController extends Controller
     protected function promoteYearLevel($student)
     {
         $levels = ['1st Year', '2nd Year', '3rd Year', '4th Year'];
-        $currentIndex = array_search($student->year_level, $levels);
 
-        if ($currentIndex !== false && $currentIndex < count($levels) - 1) {
-            $student->year_level = $levels[$currentIndex + 1];
+        $index = array_search($student->year_level, $levels);
+
+        if ($index !== false && $index < count($levels) - 1) {
+            $student->year_level = $levels[$index + 1];
             $student->save();
         }
     }
 
     protected function assignNextPayables($student)
     {
-        // find fees for the new year/semester
-        $fees = \App\Models\Fee::where('year_level', $student->year_level)
+        $fees = Fee::where('year_level', $student->year_level)
             ->where('semester', '1st Sem')
             ->get();
 
         foreach ($fees as $fee) {
             $student->user->transactions()->create([
-                'reference' => 'FEE-' . strtoupper($fee->name) . '-' . $student->id,
-                'kind' => 'charge',
-                'type' => $fee->name,
-                'amount' => $fee->amount,
-                'status' => 'pending',
-                'meta' => ['description' => $fee->name],
+                'reference' => 'FEE-' . strtoupper(Str::slug($fee->name)) . '-' . $student->id,
+                'kind'      => 'charge',
+                'type'      => $fee->name,
+                'amount'    => $fee->amount,
+                'status'    => 'pending',
+                'meta'      => ['description' => $fee->name],
             ]);
         }
     }
+
     public function download()
     {
-        $transactions = Transaction::with('fee')->orderBy('created_at', 'desc')->get();
+        $transactions = Transaction::with('fee')
+            ->orderBy('created_at', 'desc')
+            ->get();
 
         $pdf = Pdf::loadView('pdf.transactions', [
             'transactions' => $transactions

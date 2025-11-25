@@ -13,21 +13,21 @@ class DashboardController extends Controller
         $user = auth()->user();
 
         // Redirect users to their role-specific dashboards
-        switch ($user->role->value) {
+        switch ($user->role) {
             case 'student':
                 return redirect()->route('student.dashboard');
-            
+
             case 'accounting':
                 return redirect()->route('accounting.dashboard');
-            
+
             case 'admin':
                 return redirect()->route('admin.dashboard');
-            
+
             default:
-                // Fallback for any other roles
+                // Notifications for this role OR all
                 $notifications = Notification::query()
                     ->where(function ($q) use ($user) {
-                        $q->where('target_role', $user->role->value)
+                        $q->where('target_role', $user->role)
                           ->orWhere('target_role', 'all');
                     })
                     ->orderByDesc('start_date')

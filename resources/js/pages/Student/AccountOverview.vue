@@ -7,6 +7,7 @@ import TransactionDetailsDialog from '@/components/TransactionDetailsDialog.vue'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { Separator } from '@/components/ui/separator'
 import { useFormatters } from '@/composables/useFormatters'
 import type { PaymentMethod } from '@/types/transaction'
 import {
@@ -50,36 +51,66 @@ interface Transaction {
   fee?: any
 }
 
+interface Account {
+  balance: number
+  student_name?: string
+  course?: string
+  year_level?: string
+  assessment_number?: string
+  registered_at?: string
+  enrollment_date?: string
+  account_number?: string
+}
+
+interface Assessment {
+  assessment_number?: string
+  school_year?: string
+  semester?: string
+  status?: string
+  total_assessment?: number
+  tuition_fee?: number
+  other_fees?: number
+  registration_fee?: number
+  lab_fee?: number
+  misc_fee?: number
+  registration?: number
+  upon_registration?: number
+  prelim?: number
+  midterm?: number
+  semi_final?: number
+  final?: number
+  subjects?: SubjectLine[]
+  total_units?: number
+}
+
+interface Fee {
+  name: string
+  amount: number
+  category?: string
+}
+
+interface Student {
+  full_name?: string
+  name?: string
+  course?: string
+  program?: string
+  year_level?: string
+  major?: string
+  specialization?: string
+  student_number?: string
+  id_number?: string
+}
+
 interface Props {
-  student?: Record<string, any>
-  account?: Record<string, any>
-  assessment?: {
-    assessment_number?: string
-    school_year?: string
-    semester?: string
-    status?: string
-    total_assessment?: number
-    tuition_fee?: number
-    other_fees?: number
-    registration_fee?: number
-    lab_fee?: number
-    misc_fee?: number
-    registration?: number
-    upon_registration?: number
-    prelim?: number
-    midterm?: number
-    semi_final?: number
-    final?: number
-    subjects?: SubjectLine[]
-    total_units?: number
-  }
+  student?: Student
+  account?: Account
+  assessment?: Assessment
   assessmentLines?: SubjectLine[]
   termsOfPayment?: Record<string, number> | null
   transactions?: Transaction[]
-  fees?: { name: string; amount: number; category?: string }[]
+  fees?: Fee[]
   currentTerm?: { year: number; semester: string }
   tab?: 'fees' | 'history' | 'payment'
-
   stats?: {
     total_fees: number
     total_paid: number
@@ -90,14 +121,20 @@ interface Props {
 
 const props = withDefaults(defineProps<Props>(), {
   student: () => ({}),
-  account: () => ({}),
+  account: () => ({ balance: 0 }),
   assessment: () => ({}),
-  assessmentLines: () => ([]),
+  assessmentLines: () => [],
   termsOfPayment: null,
-  transactions: () => ([]),
-  fees: () => ([]),
+  transactions: () => [],
+  fees: () => [],
   currentTerm: () => ({ year: new Date().getFullYear(), semester: '1st Sem' }),
   tab: 'fees',
+  stats: () => ({
+    total_fees: 0,
+    total_paid: 0,
+    remaining_balance: 0,
+    pending_charges_count: 0,
+  }),
 })
 
 const { formatCurrency, formatDate, formatPercentage } = useFormatters()
@@ -112,8 +149,8 @@ const getTabFromUrl = (): 'fees' | 'history' | 'payment' => {
   const tab = urlParams.get('tab')
   return (tab === 'payment' || tab === 'history') ? tab as any : 'fees'
 }
-const activeTab = ref<'fees' | 'history' | 'payment'>(props.tab || getTabFromUrl())
 
+const activeTab = ref<'fees' | 'history' | 'payment'>(props.tab || getTabFromUrl())
 const showDetailsDialog = ref(false)
 const selectedTransaction = ref<Transaction | null>(null)
 
@@ -137,7 +174,7 @@ const studentInfo = computed(() => ({
   yearLevel: props.student?.year_level || props.account?.year_level || 'N/A',
   major: props.student?.major || props.student?.specialization || 'N/A',
   registeredAt: props.account?.registered_at || props.account?.enrollment_date || null,
-  studentNumber: props.student?.student_id || props.student?.student_number || props.student?.id_number || props.account?.account_number || 'N/A',
+  studentNumber: props.student?.student_number || props.student?.id_number || props.account?.account_number || 'N/A',
 }))
 
 const termInfo = computed(() => ({
@@ -148,102 +185,48 @@ const termInfo = computed(() => ({
 }))
 
 const subjects = computed<SubjectLine[]>(() => {
-  // Priority: assessment.subjects > assessmentLines
   const subjectList = latestAssessment.value.subjects || props.assessmentLines || []
   
   if (Array.isArray(subjectList) && subjectList.length) {
     return subjectList.map((s: any) => ({
-      // Handle multiple possible field names for subject code
-      subject_code: s.subject_code || s.code || s.course_code || '',
-      code: s.code || s.subject_code || s.course_code || '',
-      
-      // Handle multiple possible field names for description/title
-      description: s.description || s.title || s.name || s.subject_name || '',
-      title: s.title || s.description || s.name || '',
-      name: s.name || s.title || s.description || '',
-      
-      // Handle units
-      units: Number(s.units || s.total_units || s.unit || s.credit_units || 0),
-      total_units: Number(s.total_units || s.units || s.unit || 0),
-      lec_units: Number(s.lec_units || s.lecture_units || 0),
-      lab_units: Number(s.lab_units || s.laboratory_units || 0),
-      
-      // Handle fees
-      tuition: Number(s.tuition || 0),
-      lab_fee: Number(s.lab_fee || s.lab || 0),
-      misc_fee: Number(s.misc_fee || s.misc || 0),
-      total: Number(s.total || (Number(s.tuition || 0) + Number(s.lab_fee || 0) + Number(s.misc_fee || 0))),
-      
-      // Additional fields
-      has_lab: s.has_lab || false,
-      semester: s.semester || termInfo.value.semester,
-      time: s.time || s.schedule_time || '',
-      day: s.day || s.schedule_day || '',
+      subject_code: s.subject_code ?? s.code ?? s.course_code ?? '',
+      description: s.description ?? s.title ?? s.name ?? s.subject_name ?? '',
+      units: Number(s.units ?? s.total_units ?? s.unit ?? s.credit_units ?? 0),
+      lec_units: Number(s.lec_units ?? s.lecture_units ?? 0),
+      lab_units: Number(s.lab_units ?? s.laboratory_units ?? 0),
+      tuition: Number(s.tuition ?? 0),
+      lab_fee: Number(s.lab_fee ?? s.lab ?? 0),
+      misc_fee: Number(s.misc_fee ?? s.misc ?? 0),
+      total: Number(s.total ?? (Number(s.tuition ?? 0) + Number(s.lab_fee ?? 0) + Number(s.misc_fee ?? 0))),
+      semester: s.semester ?? termInfo.value.semester,
+      time: s.time ?? s.schedule_time ?? '',
+      day: s.day ?? s.schedule_day ?? '',
     }))
   }
   return []
 })
 
 const totalUnits = computed(() => {
-  // Try assessment first
   if (typeof latestAssessment.value.total_units === 'number' && latestAssessment.value.total_units > 0) {
     return latestAssessment.value.total_units
   }
-  
-  // Calculate from subjects
   const calculated = subjects.value.reduce((sum, subject) => sum + Number(subject.units || 0), 0)
-  
   return calculated > 0 ? calculated : 0
 })
 
-const feesBreakdown = computed(() => {
-  // First try to use the feeBreakdown prop
-  if ((props as any).feeBreakdown && (props as any).feeBreakdown.length > 0) {
-    const breakdown = {
-      registration: 0,
-      tuition: 0,
-      lab: 0,
-      misc: 0,
-      other: 0,
-    }
-    
-    ;(props as any).feeBreakdown.forEach((fee: any) => {
-      const amount = Number(fee.amount || 0)
-      const category = (fee.category || fee.name || '').toLowerCase()
-      
-      if (category.includes('registration')) {
-        breakdown.registration = amount
-      } else if (category.includes('tuition')) {
-        breakdown.tuition = amount
-      } else if (category.includes('lab')) {
-        breakdown.lab = amount
-      } else if (category.includes('misc')) {
-        breakdown.misc = amount
-      } else {
-        breakdown.other += amount
-      }
-    })
-    
-    return breakdown
-  }
-  
-  // Fallback to assessment
-  return {
-    registration: Number(latestAssessment.value.registration_fee || latestAssessment.value.registration || 0),
-    tuition: Number(latestAssessment.value.tuition_fee || 0),
-    lab: Number(latestAssessment.value.lab_fee || 0),
-    misc: Number(latestAssessment.value.misc_fee || 0),
-    other: Number(latestAssessment.value.other_fees || 0),
-  }
-})
+const feesBreakdown = computed(() => ({
+  registration: Number(latestAssessment.value.registration_fee ?? latestAssessment.value.registration ?? 0),
+  tuition: Number(latestAssessment.value.tuition_fee ?? 0),
+  lab: Number(latestAssessment.value.lab_fee ?? 0),
+  misc: Number(latestAssessment.value.misc_fee ?? 0),
+  other: Number(latestAssessment.value.other_fees ?? 0),
+}))
 
 const totalAssessmentFee = computed(() => {
-  // Priority: explicit total > calculated sum
   if (typeof latestAssessment.value.total_assessment === 'number' && latestAssessment.value.total_assessment > 0) {
     return latestAssessment.value.total_assessment
   }
   
-  // Calculate from breakdown
   const sum = feesBreakdown.value.registration + 
               feesBreakdown.value.tuition + 
               feesBreakdown.value.lab + 
@@ -254,31 +237,16 @@ const totalAssessmentFee = computed(() => {
     return Math.round(sum * 100) / 100
   }
   
-  // Fallback to props.fees
-  return (props.fees?.reduce((sum, fee) => sum + Number(fee.amount || 0), 0) ?? 0)
+  return props.fees?.reduce((sum, fee) => sum + Number(fee.amount || 0), 0) ?? 0
 })
 
-const termsOfPaymentBreakdown = computed(() => {
-  // First try props.termsOfPayment
-  if (props.termsOfPayment) {
-    return {
-      upon_registration: Number(props.termsOfPayment.upon_registration || props.termsOfPayment.registration || 0),
-      prelim: Number(props.termsOfPayment.prelim || 0),
-      midterm: Number(props.termsOfPayment.midterm || 0),
-      semi_final: Number(props.termsOfPayment.semi_final || 0),
-      final: Number(props.termsOfPayment.final || 0),
-    }
-  }
-  
-  // Then try assessment
-  return {
-    upon_registration: Number(latestAssessment.value.upon_registration || latestAssessment.value.registration || 0),
-    prelim: Number(latestAssessment.value.prelim || 0),
-    midterm: Number(latestAssessment.value.midterm || 0),
-    semi_final: Number(latestAssessment.value.semi_final || 0),
-    final: Number(latestAssessment.value.final || 0),
-  }
-})
+const termsOfPaymentBreakdown = computed(() => ({
+  upon_registration: latestAssessment.value.upon_registration ?? latestAssessment.value.registration ?? props.termsOfPayment?.upon_registration ?? props.termsOfPayment?.registration ?? 0,
+  prelim: latestAssessment.value.prelim ?? props.termsOfPayment?.prelim ?? 0,
+  midterm: latestAssessment.value.midterm ?? props.termsOfPayment?.midterm ?? 0,
+  semi_final: latestAssessment.value.semi_final ?? props.termsOfPayment?.semi_final ?? 0,
+  final: latestAssessment.value.final ?? props.termsOfPayment?.final ?? 0,
+}))
 
 // ============================================
 // PAYMENT TRACKING
@@ -298,6 +266,7 @@ const remainingBalance = computed(() => {
     .filter(t => t.kind === 'payment' && t.status === 'paid')
     .reduce((sum, t) => sum + Number(t.amount || 0), 0)
   const diff = charges - payments
+  
   if ((props.transactions ?? []).length === 0) {
     const assessed = totalAssessmentFee.value
     return Math.max(0, Math.round((assessed - totalPaid.value) * 100) / 100)
@@ -310,30 +279,10 @@ const paymentPercentage = computed(() => {
   return Math.min(100, Math.round((totalPaid.value / totalAssessmentFee.value) * 100))
 })
 
-const feesByCategory = computed(() => {
-  const list = props.fees ?? []
-  const grouped = list.reduce((acc: Record<string, any[]>, fee) => {
-    const cat = fee.category || 'Other'
-    acc[cat] = acc[cat] ?? []
-    acc[cat].push(fee)
-    return acc
-  }, {})
-  return Object.entries(grouped).map(([category, arr]) => ({
-    category,
-    fees: arr,
-    total: arr.reduce((s, f) => s + Number(f.amount || 0), 0),
-  }))
-})
-
 const paymentHistory = computed(() => {
   return (props.transactions ?? [])
     .filter(t => t.kind === 'payment')
     .sort((a, b) => (new Date(b.created_at || '').getTime() - new Date(a.created_at || '').getTime()))
-})
-
-const pendingCharges = computed(() => {
-  return (props.transactions ?? [])
-    .filter(t => t.kind === 'charge' && t.status === 'pending')
 })
 
 const canSubmitPayment = computed(() => {
@@ -366,64 +315,10 @@ const viewTransaction = (transaction: Transaction) => {
   showDetailsDialog.value = true
 }
 
-const handlePayNow = (transaction?: Transaction) => {
-  if (transaction) {
-    // Handle specific transaction payment
-    paymentForm.amount = transaction.amount
-    paymentForm.description = `Payment for ${transaction.type || transaction.meta?.description || 'Charge'}`
-    activeTab.value = 'payment'
-  } else {
-    // Handle general payment - suggest next term payment
-    const nextTerm = determineNextPaymentTerm()
-    const nextTermAmount = getNextTermAmount(nextTerm)
-    
-    paymentForm.amount = Math.min(nextTermAmount, remainingBalance.value)
-    paymentForm.description = `Payment for ${nextTerm}`
-    activeTab.value = 'payment'
-  }
-}
-
-// Helper function to determine next unpaid term
-const determineNextPaymentTerm = (): string => {
-  const terms = ['Upon Registration', 'Prelim', 'Midterm', 'Semi-Final', 'Final']
-  const termAmounts = [
-    termsOfPaymentBreakdown.value.upon_registration,
-    termsOfPaymentBreakdown.value.prelim,
-    termsOfPaymentBreakdown.value.midterm,
-    termsOfPaymentBreakdown.value.semi_final,
-    termsOfPaymentBreakdown.value.final,
-  ]
-  
-  // Check which terms have been paid based on payment history
-  const paidTerms = paymentHistory.value
-    .filter(p => p.meta?.description)
-    .map(p => {
-      const desc = p.meta.description.toLowerCase()
-      return terms.find(t => desc.includes(t.toLowerCase()))
-    })
-    .filter(Boolean)
-  
-  // Find next unpaid term
-  for (let i = 0; i < terms.length; i++) {
-    if (!paidTerms.includes(terms[i]) && termAmounts[i] > 0) {
-      return terms[i]
-    }
-  }
-  
-  return 'Payment' // Default if all terms paid or no terms defined
-}
-
-// Helper function to get amount for specific term
-const getNextTermAmount = (term: string): number => {
-  const termMap: Record<string, number> = {
-    'Upon Registration': termsOfPaymentBreakdown.value.upon_registration,
-    'Prelim': termsOfPaymentBreakdown.value.prelim,
-    'Midterm': termsOfPaymentBreakdown.value.midterm,
-    'Semi-Final': termsOfPaymentBreakdown.value.semi_final,
-    'Final': termsOfPaymentBreakdown.value.final,
-  }
-  
-  return termMap[term] || remainingBalance.value
+const handlePayNow = (transaction: Transaction) => {
+  paymentForm.amount = transaction.amount
+  paymentForm.description = `Payment for ${transaction.type || transaction.meta?.description || 'Charge'}`
+  activeTab.value = 'payment'
 }
 
 const submitPayment = () => {
@@ -453,21 +348,6 @@ const submitPayment = () => {
 const downloadPDF = () => {
   console.log('Download PDF')
 }
-
-// Debugging console output (moved here to ensure computed values exist)
-onMounted(() => {
-  console.group('📊 Account Overview Data Debug')
-  console.log('Assessment:', latestAssessment.value)
-  console.log('Assessment Lines:', props.assessmentLines)
-  console.log('Subjects (computed):', subjects.value)
-  console.log('Fee Breakdown (prop):', (props as any).feeBreakdown)
-  console.log('Fees Breakdown (computed):', feesBreakdown.value)
-  console.log('Terms of Payment (prop):', props.termsOfPayment)
-  console.log('Terms Breakdown (computed):', termsOfPaymentBreakdown.value)
-  console.log('Total Assessment:', totalAssessmentFee.value)
-  console.log('Total Units:', totalUnits.value)
-  console.groupEnd()
-})
 </script>
 
 <template>
@@ -498,7 +378,7 @@ onMounted(() => {
           </div>
           <h3 class="text-sm font-medium text-gray-600 mb-2">Total Assessment Fee</h3>
           <p class="text-3xl font-bold text-blue-600">
-            {{ formatCurrency(props.stats?.total_fees ?? 0) }}
+            {{ formatCurrency(stats?.total_fees ?? 0) }}
           </p>
           <p v-if="feesBreakdown.tuition || feesBreakdown.other" class="text-xs text-gray-500 mt-2">
             Tuition: {{ formatCurrency(feesBreakdown.tuition) }} •
@@ -609,9 +489,7 @@ onMounted(() => {
 
         <!-- Tab Content -->
         <div class="p-6">
-          <!-- ============================================ -->
-          <!-- CERTIFICATE OF MATRICULATION FORM          -->
-          <!-- ============================================ -->
+          <!-- Fees & Assessment Tab -->
           <div v-if="activeTab === 'fees'" class="space-y-6">
             <h2 class="text-2xl font-bold text-gray-900 uppercase tracking-wide border-b-2 border-blue-600 pb-2">
               Certificate of Matriculation Form
@@ -805,14 +683,25 @@ onMounted(() => {
                 </div>
               </div>
             </div>
-          </div>
-          <!-- ============================================ -->
-          <!-- END CERTIFICATE OF MATRICULATION           -->
-          <!-- ============================================ -->
 
-          <!-- Payment History -->
+            <!-- Action Buttons -->
+            <div class="flex justify-end gap-3 mt-6">
+              <Button variant="outline" @click="downloadPDF">
+                Download Assessment Form
+              </Button>
+              <Button v-if="remainingBalance > 0" @click="activeTab = 'payment'" class="bg-blue-600 hover:bg-blue-700">
+                <CreditCard class="w-4 h-4 mr-2" />
+                Make Payment
+              </Button>
+            </div>
+          </div>
+
+          <!-- Payment History Tab -->
           <div v-if="activeTab === 'history'" class="space-y-4">
-            <h2 class="text-lg font-semibold">Payment History</h2>
+            <div class="flex justify-between items-center">
+              <h2 class="text-lg font-semibold">Payment History</h2>
+              <span class="text-sm text-gray-600">{{ paymentHistory.length }} payment(s)</span>
+            </div>
 
             <div v-if="paymentHistory.length" class="space-y-3">
               <div
@@ -826,7 +715,7 @@ onMounted(() => {
                     <CheckCircle :size="20" class="text-green-600" />
                   </div>
                   <div>
-                    <p class="font-medium text-gray-900">{{ payment.meta?.description || payment.type }}</p>
+                    <p class="font-medium text-gray-900">{{ payment.meta?.description || payment.type || 'Payment' }}</p>
                     <p class="text-sm text-gray-600">
                       {{ formatDate(payment.created_at, 'short') }}
                     </p>
@@ -849,9 +738,9 @@ onMounted(() => {
             </div>
           </div>
 
-          <!-- Payment Form -->
+          <!-- Payment Form Tab -->
           <div v-if="activeTab === 'payment'" class="space-y-6">
-            <h2 class="text-2xl font-bold">Add New Payment</h2>
+            <h2 class="text-2xl font-bold">Make a Payment</h2>
 
             <div v-if="remainingBalance <= 0" class="p-4 bg-green-50 border border-green-200 rounded-lg">
               <div class="flex items-center gap-2">
@@ -861,68 +750,91 @@ onMounted(() => {
               <p class="text-sm text-green-700 mt-1">All fees have been paid in full.</p>
             </div>
 
-            <form @submit.prevent="submitPayment" class="space-y-6">
-              <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div class="space-y-2">
-                  <Label for="amount">Amount *</Label>
-                  <Input
-                    id="amount"
-                    v-model.number="paymentForm.amount"
-                    type="number"
-                    step="0.01"
-                    min="0"
-                    :max="remainingBalance"
-                    placeholder="0.00"
-                    required
-                    :disabled="remainingBalance <= 0"
-                  />
-                  <p class="text-xs text-gray-500">Maximum: {{ formatCurrency(remainingBalance) }}</p>
-                  <p v-if="paymentForm.errors.amount" class="text-red-500 text-sm">{{ paymentForm.errors.amount }}</p>
+            <div v-else class="space-y-6">
+              <!-- Payment Form -->
+              <form @submit.prevent="submitPayment" class="space-y-6">
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div class="space-y-2">
+                    <Label for="amount">Amount *</Label>
+                    <Input
+                      id="amount"
+                      v-model.number="paymentForm.amount"
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      :max="remainingBalance"
+                      placeholder="0.00"
+                      required
+                    />
+                    <p class="text-xs text-gray-500">Maximum: {{ formatCurrency(remainingBalance) }}</p>
+                    <p v-if="paymentForm.errors.amount" class="text-red-500 text-sm">{{ paymentForm.errors.amount }}</p>
+                  </div>
+
+                  <div class="space-y-2">
+                    <Label for="payment_method">Payment Method *</Label>
+                    <select
+                      id="payment_method"
+                      v-model="paymentForm.payment_method"
+                      class="w-full px-4 py-2 border rounded-lg shadow-sm focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                      required
+                    >
+                      <option value="cash">Cash</option>
+                      <option value="gcash">GCash</option>
+                      <option value="bank_transfer">Bank Transfer</option>
+                      <option value="credit_card">Credit Card</option>
+                      <option value="debit_card">Debit Card</option>
+                    </select>
+                    <p v-if="paymentForm.errors.payment_method" class="text-red-500 text-sm">{{ paymentForm.errors.payment_method }}</p>
+                  </div>
+
+                  <div class="space-y-2">
+                    <Label for="paid_at">Payment Date *</Label>
+                    <Input 
+                      id="paid_at" 
+                      v-model="paymentForm.paid_at" 
+                      type="date" 
+                      required 
+                    />
+                    <p v-if="paymentForm.errors.paid_at" class="text-red-500 text-sm">{{ paymentForm.errors.paid_at }}</p>
+                  </div>
+
+                  <div class="space-y-2">
+                    <Label>Reference Number <span class="text-xs text-gray-500">(Auto-generated)</span></Label>
+                    <Input 
+                      value="System will generate after submission" 
+                      disabled 
+                      class="bg-gray-100 cursor-not-allowed text-gray-500" 
+                    />
+                    <p class="text-xs text-gray-500">Reference number will be automatically generated</p>
+                  </div>
+
+                  <div class="md:col-span-2 space-y-2">
+                    <Label for="description">Description *</Label>
+                    <Input 
+                      id="description" 
+                      v-model="paymentForm.description" 
+                      placeholder="Payment description" 
+                      required 
+                    />
+                    <p v-if="paymentForm.errors.description" class="text-red-500 text-sm">{{ paymentForm.errors.description }}</p>
+                  </div>
                 </div>
 
-                <div class="space-y-2">
-                  <Label for="payment_method">Payment Method *</Label>
-                  <select
-                    id="payment_method"
-                    v-model="paymentForm.payment_method"
-                    :disabled="remainingBalance <= 0"
-                    class="w-full px-4 py-2 border rounded-lg shadow-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none disabled:bg-gray-100 disabled:cursor-not-allowed"
-                  >
-                    <option value="cash">Cash</option>
-                    <option value="gcash">GCash</option>
-                    <option value="bank_transfer">Bank Transfer</option>
-                    <option value="credit_card">Credit Card</option>
-                    <option value="debit_card">Debit Card</option>
-                  </select>
-                  <p v-if="paymentForm.errors.payment_method" class="text-red-500 text-sm">{{ paymentForm.errors.payment_method }}</p>
-                </div>
+                <Button 
+                  type="submit" 
+                  class="w-full py-6 text-lg" 
+                  :disabled="!canSubmitPayment || paymentForm.processing"
+                >
+                  <DollarSign v-if="!paymentForm.processing" class="w-5 h-5 mr-2" />
+                  <span v-if="paymentForm.processing">Processing Payment...</span>
+                  <span v-else>Submit Payment of {{ formatCurrency(paymentForm.amount) }}</span>
+                </Button>
 
-                <div class="space-y-2">
-                  <Label>Reference Number <span class="text-xs text-gray-500">(Auto-generated)</span></Label>
-                  <Input value="System will generate after submission" disabled class="bg-gray-100 cursor-not-allowed text-gray-500" />
-                  <p class="text-xs text-gray-500">Reference number will be automatically generated</p>
-                </div>
-
-                <div class="space-y-2">
-                  <Label for="paid_at">Payment Date *</Label>
-                  <Input id="paid_at" v-model="paymentForm.paid_at" type="date" required :disabled="remainingBalance <= 0" />
-                  <p v-if="paymentForm.errors.paid_at" class="text-red-500 text-sm">{{ paymentForm.errors.paid_at }}</p>
-                </div>
-
-                <div class="md:col-span-2 space-y-2">
-                  <Label for="description">Description *</Label>
-                  <Input id="description" v-model="paymentForm.description" placeholder="Payment description" required :disabled="remainingBalance <= 0" />
-                  <p v-if="paymentForm.errors.description" class="text-red-500 text-sm">{{ paymentForm.errors.description }}</p>
-                </div>
-              </div>
-
-              <Button type="submit" class="w-full" :disabled="!canSubmitPayment || paymentForm.processing">
-                <DollarSign v-if="!paymentForm.processing" class="w-4 h-4 mr-2" />
-                <span v-if="paymentForm.processing">Processing...</span>
-                <span v-else-if="remainingBalance <= 0">No Balance to Pay</span>
-                <span v-else>Record Payment</span>
-              </Button>
-            </form>
+                <p class="text-xs text-gray-500 text-center">
+                  By submitting this form, you confirm that the payment information is accurate.
+                </p>
+              </form>
+            </div>
           </div>
         </div>
       </div>
@@ -932,8 +844,8 @@ onMounted(() => {
     <TransactionDetailsDialog
       v-model:open="showDetailsDialog"
       :transaction="selectedTransaction"
-      :show-pay-now-button="true"
-      :show-download-button="true"
+      :show-pay-now-button="selectedTransaction?.kind === 'charge' && selectedTransaction?.status === 'pending'"
+      :show-download-button="selectedTransaction?.status === 'paid'"
       @pay-now="handlePayNow"
       @download="downloadPDF"
     />

@@ -13,49 +13,54 @@ class StudentDashboardController extends Controller
     {
         $user = $request->user();
 
-        // Get account with transactions
-        $account = $user->account()->with('transactions')->first();
-        
+        // Ensure the student has an account
+        $account = $user->account()
+            ->with('transactions')
+            ->first();
+
         if (!$account) {
             $account = $user->account()->create(['balance' => 0]);
         }
 
-        // Calculate stats
-        $totalCharges = $user->transactions()->where('kind', 'charge')->sum('amount');
+        // Calculate financial stats
+        $totalCharges = $user->transactions()
+            ->where('kind', 'charge')
+            ->sum('amount');
+
         $totalPayments = $user->transactions()
             ->where('kind', 'payment')
             ->where('status', 'paid')
             ->sum('amount');
-        $remainingBalance = abs($account->balance);
+
+        $remainingBalance = (float) abs($account->balance);
+
         $pendingChargesCount = $user->transactions()
             ->where('kind', 'charge')
             ->where('status', 'pending')
             ->count();
 
-        // Get notifications
+        // Get notifications for student OR all
         $notifications = Notification::where(function ($q) use ($user) {
-            $q->where('target_role', $user->role->value)
-              ->orWhere('target_role', 'all');
-        })
-        ->orderByDesc('start_date')
-        ->take(5)
-        ->get();
+                $q->where('target_role', $user->role)
+                  ->orWhere('target_role', 'all');
+            })
+            ->orderByDesc('start_date')
+            ->take(5)
+            ->get();
 
-        // Get recent transactions
+        // Recent transactions (latest 5)
         $recentTransactions = $user->transactions()
-            ->orderBy('created_at', 'desc')
+            ->orderByDesc('created_at')
             ->take(5)
             ->get()
-            ->map(function ($txn) {
-                return [
-                    'id' => $txn->id,
-                    'reference' => $txn->reference,
-                    'type' => $txn->type ?: 'General',
-                    'amount' => $txn->amount,
-                    'status' => $txn->status,
-                    'created_at' => $txn->created_at,
-                ];
-            });
+            ->map(fn($txn) => [
+                'id' => $txn->id,
+                'reference' => $txn->reference,
+                'type' => $txn->type ?? 'General',
+                'amount' => $txn->amount,
+                'status' => $txn->status,
+                'created_at' => $txn->created_at,
+            ]);
 
         return Inertia::render('Student/Dashboard', [
             'account' => $account,
@@ -64,7 +69,7 @@ class StudentDashboardController extends Controller
             'stats' => [
                 'total_fees' => (float) $totalCharges,
                 'total_paid' => (float) $totalPayments,
-                'remaining_balance' => (float) $remainingBalance,
+                'remaining_balance' => $remainingBalance,
                 'pending_charges_count' => $pendingChargesCount,
             ],
         ]);
