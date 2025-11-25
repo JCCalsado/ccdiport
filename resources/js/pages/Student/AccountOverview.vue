@@ -9,7 +9,6 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { useFormatters } from '@/composables/useFormatters'
 import type { PaymentMethod } from '@/types/transaction'
-import { router } from '@inertiajs/vue3'
 import {
   CreditCard,
   CheckCircle,
@@ -19,6 +18,20 @@ import {
   History,
   DollarSign,
 } from 'lucide-vue-next'
+
+onMounted(() => {
+  console.group('📊 Account Overview Data Debug')
+  console.log('Assessment:', latestAssessment.value)
+  console.log('Assessment Lines:', props.assessmentLines)
+  console.log('Subjects (computed):', subjects.value)
+  console.log('Fee Breakdown (prop):', props.feeBreakdown)
+  console.log('Fees Breakdown (computed):', feesBreakdown.value)
+  console.log('Terms of Payment (prop):', props.termsOfPayment)
+  console.log('Terms Breakdown (computed):', termsOfPaymentBreakdown.value)
+  console.log('Total Assessment:', totalAssessmentFee.value)
+  console.log('Total Units:', totalUnits.value)
+  console.groupEnd()
+})
 
 interface SubjectLine {
   subject_code?: string
@@ -89,12 +102,6 @@ interface Props {
   }
 }
 
-router.visit(route('student.account'), {
-    data: { tab: 'payment' },
-    preserveState: true,
-    preserveScroll: true,
-})
-
 const props = withDefaults(defineProps<Props>(), {
   student: () => ({}),
   account: () => ({}),
@@ -144,7 +151,7 @@ const studentInfo = computed(() => ({
   yearLevel: props.student?.year_level || props.account?.year_level || 'N/A',
   major: props.student?.major || props.student?.specialization || 'N/A',
   registeredAt: props.account?.registered_at || props.account?.enrollment_date || null,
-  studentNumber: props.student?.student_number || props.student?.id_number || props.account?.account_number || 'N/A',
+  studentNumber: props.student?.student_id || props.student?.student_number || props.student?.id_number || props.account?.account_number || 'N/A',
 }))
 
 const termInfo = computed(() => ({
@@ -160,38 +167,89 @@ const subjects = computed<SubjectLine[]>(() => {
   
   if (Array.isArray(subjectList) && subjectList.length) {
     return subjectList.map((s: any) => ({
-      subject_code: s.subject_code ?? s.code ?? s.course_code ?? '',
-      description: s.description ?? s.title ?? s.name ?? s.subject_name ?? '',
-      units: Number(s.units ?? s.total_units ?? s.unit ?? s.credit_units ?? 0),
-      lec_units: Number(s.lec_units ?? s.lecture_units ?? 0),
-      lab_units: Number(s.lab_units ?? s.laboratory_units ?? 0),
-      tuition: Number(s.tuition ?? 0),
-      lab_fee: Number(s.lab_fee ?? s.lab ?? 0),
-      misc_fee: Number(s.misc_fee ?? s.misc ?? 0),
-      total: Number(s.total ?? (Number(s.tuition ?? 0) + Number(s.lab_fee ?? 0) + Number(s.misc_fee ?? 0))),
-      semester: s.semester ?? termInfo.value.semester,
-      time: s.time ?? s.schedule_time ?? '',
-      day: s.day ?? s.schedule_day ?? '',
+      // Handle multiple possible field names for subject code
+      subject_code: s.subject_code || s.code || s.course_code || '',
+      code: s.code || s.subject_code || s.course_code || '',
+      
+      // Handle multiple possible field names for description/title
+      description: s.description || s.title || s.name || s.subject_name || '',
+      title: s.title || s.description || s.name || '',
+      name: s.name || s.title || s.description || '',
+      
+      // Handle units
+      units: Number(s.units || s.total_units || s.unit || s.credit_units || 0),
+      total_units: Number(s.total_units || s.units || s.unit || 0),
+      lec_units: Number(s.lec_units || s.lecture_units || 0),
+      lab_units: Number(s.lab_units || s.laboratory_units || 0),
+      
+      // Handle fees
+      tuition: Number(s.tuition || 0),
+      lab_fee: Number(s.lab_fee || s.lab || 0),
+      misc_fee: Number(s.misc_fee || s.misc || 0),
+      total: Number(s.total || (Number(s.tuition || 0) + Number(s.lab_fee || 0) + Number(s.misc_fee || 0))),
+      
+      // Additional fields
+      has_lab: s.has_lab || false,
+      semester: s.semester || termInfo.value.semester,
+      time: s.time || s.schedule_time || '',
+      day: s.day || s.schedule_day || '',
     }))
   }
   return []
 })
 
 const totalUnits = computed(() => {
+  // Try assessment first
   if (typeof latestAssessment.value.total_units === 'number' && latestAssessment.value.total_units > 0) {
     return latestAssessment.value.total_units
   }
+  
+  // Calculate from subjects
   const calculated = subjects.value.reduce((sum, subject) => sum + Number(subject.units || 0), 0)
+  
   return calculated > 0 ? calculated : 0
 })
 
-const feesBreakdown = computed(() => ({
-  registration: Number(latestAssessment.value.registration_fee ?? latestAssessment.value.registration ?? 0),
-  tuition: Number(latestAssessment.value.tuition_fee ?? 0),
-  lab: Number(latestAssessment.value.lab_fee ?? 0),
-  misc: Number(latestAssessment.value.misc_fee ?? 0),
-  other: Number(latestAssessment.value.other_fees ?? 0),
-}))
+const feesBreakdown = computed(() => {
+  // First try to use the feeBreakdown prop
+  if (props.feeBreakdown && props.feeBreakdown.length > 0) {
+    const breakdown = {
+      registration: 0,
+      tuition: 0,
+      lab: 0,
+      misc: 0,
+      other: 0,
+    }
+    
+    props.feeBreakdown.forEach((fee: any) => {
+      const amount = Number(fee.amount || 0)
+      const category = (fee.category || fee.name || '').toLowerCase()
+      
+      if (category.includes('registration')) {
+        breakdown.registration = amount
+      } else if (category.includes('tuition')) {
+        breakdown.tuition = amount
+      } else if (category.includes('lab')) {
+        breakdown.lab = amount
+      } else if (category.includes('misc')) {
+        breakdown.misc = amount
+      } else {
+        breakdown.other += amount
+      }
+    })
+    
+    return breakdown
+  }
+  
+  // Fallback to assessment
+  return {
+    registration: Number(latestAssessment.value.registration_fee || latestAssessment.value.registration || 0),
+    tuition: Number(latestAssessment.value.tuition_fee || 0),
+    lab: Number(latestAssessment.value.lab_fee || 0),
+    misc: Number(latestAssessment.value.misc_fee || 0),
+    other: Number(latestAssessment.value.other_fees || 0),
+  }
+})
 
 const totalAssessmentFee = computed(() => {
   // Priority: explicit total > calculated sum
@@ -199,6 +257,7 @@ const totalAssessmentFee = computed(() => {
     return latestAssessment.value.total_assessment
   }
   
+  // Calculate from breakdown
   const sum = feesBreakdown.value.registration + 
               feesBreakdown.value.tuition + 
               feesBreakdown.value.lab + 
@@ -213,13 +272,27 @@ const totalAssessmentFee = computed(() => {
   return props.fees?.reduce((sum, fee) => sum + Number(fee.amount || 0), 0) ?? 0
 })
 
-const termsOfPaymentBreakdown = computed(() => ({
-  upon_registration: latestAssessment.value.upon_registration ?? latestAssessment.value.registration ?? props.termsOfPayment?.upon_registration ?? props.termsOfPayment?.registration ?? 0,
-  prelim: latestAssessment.value.prelim ?? props.termsOfPayment?.prelim ?? 0,
-  midterm: latestAssessment.value.midterm ?? props.termsOfPayment?.midterm ?? 0,
-  semi_final: latestAssessment.value.semi_final ?? props.termsOfPayment?.semi_final ?? 0,
-  final: latestAssessment.value.final ?? props.termsOfPayment?.final ?? 0,
-}))
+const termsOfPaymentBreakdown = computed(() => {
+  // First try props.termsOfPayment
+  if (props.termsOfPayment) {
+    return {
+      upon_registration: Number(props.termsOfPayment.upon_registration || props.termsOfPayment.registration || 0),
+      prelim: Number(props.termsOfPayment.prelim || 0),
+      midterm: Number(props.termsOfPayment.midterm || 0),
+      semi_final: Number(props.termsOfPayment.semi_final || 0),
+      final: Number(props.termsOfPayment.final || 0),
+    }
+  }
+  
+  // Then try assessment
+  return {
+    upon_registration: Number(latestAssessment.value.upon_registration || latestAssessment.value.registration || 0),
+    prelim: Number(latestAssessment.value.prelim || 0),
+    midterm: Number(latestAssessment.value.midterm || 0),
+    semi_final: Number(latestAssessment.value.semi_final || 0),
+    final: Number(latestAssessment.value.final || 0),
+  }
+})
 
 // ============================================
 // PAYMENT TRACKING
@@ -307,10 +380,64 @@ const viewTransaction = (transaction: Transaction) => {
   showDetailsDialog.value = true
 }
 
-const handlePayNow = (transaction: Transaction) => {
-  paymentForm.amount = transaction.amount
-  paymentForm.description = `Payment for ${transaction.type || transaction.meta?.description || 'Charge'}`
-  activeTab.value = 'payment'
+const handlePayNow = (transaction?: Transaction) => {
+  if (transaction) {
+    // Handle specific transaction payment
+    paymentForm.amount = transaction.amount
+    paymentForm.description = `Payment for ${transaction.type || transaction.meta?.description || 'Charge'}`
+    activeTab.value = 'payment'
+  } else {
+    // Handle general payment - suggest next term payment
+    const nextTerm = determineNextPaymentTerm()
+    const nextTermAmount = getNextTermAmount(nextTerm)
+    
+    paymentForm.amount = Math.min(nextTermAmount, remainingBalance.value)
+    paymentForm.description = `Payment for ${nextTerm}`
+    activeTab.value = 'payment'
+  }
+}
+
+// Helper function to determine next unpaid term
+const determineNextPaymentTerm = (): string => {
+  const terms = ['Upon Registration', 'Prelim', 'Midterm', 'Semi-Final', 'Final']
+  const termAmounts = [
+    termsOfPaymentBreakdown.value.upon_registration,
+    termsOfPaymentBreakdown.value.prelim,
+    termsOfPaymentBreakdown.value.midterm,
+    termsOfPaymentBreakdown.value.semi_final,
+    termsOfPaymentBreakdown.value.final,
+  ]
+  
+  // Check which terms have been paid based on payment history
+  const paidTerms = paymentHistory.value
+    .filter(p => p.meta?.description)
+    .map(p => {
+      const desc = p.meta.description.toLowerCase()
+      return terms.find(t => desc.includes(t.toLowerCase()))
+    })
+    .filter(Boolean)
+  
+  // Find next unpaid term
+  for (let i = 0; i < terms.length; i++) {
+    if (!paidTerms.includes(terms[i]) && termAmounts[i] > 0) {
+      return terms[i]
+    }
+  }
+  
+  return 'Payment' // Default if all terms paid or no terms defined
+}
+
+// Helper function to get amount for specific term
+const getNextTermAmount = (term: string): number => {
+  const termMap: Record<string, number> = {
+    'Upon Registration': termsOfPaymentBreakdown.value.upon_registration,
+    'Prelim': termsOfPaymentBreakdown.value.prelim,
+    'Midterm': termsOfPaymentBreakdown.value.midterm,
+    'Semi-Final': termsOfPaymentBreakdown.value.semi_final,
+    'Final': termsOfPaymentBreakdown.value.final,
+  }
+  
+  return termMap[term] || remainingBalance.value
 }
 
 const submitPayment = () => {

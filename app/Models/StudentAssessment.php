@@ -9,15 +9,18 @@ class StudentAssessment extends Model
 {
     protected $fillable = [
         'user_id',
+        'curriculum_id', // ← Make sure this is in fillable
         'assessment_number',
         'year_level',
         'semester',
         'school_year',
         'tuition_fee',
         'other_fees',
+        'registration_fee', // ← Make sure this is in fillable
         'total_assessment',
         'subjects',
         'fee_breakdown',
+        'payment_terms', // ← Make sure this is in fillable
         'status',
         'created_by',
     ];
@@ -25,10 +28,18 @@ class StudentAssessment extends Model
     protected $casts = [
         'tuition_fee' => 'decimal:2',
         'other_fees' => 'decimal:2',
+        'registration_fee' => 'decimal:2', // ← Make sure this is cast
         'total_assessment' => 'decimal:2',
         'subjects' => 'array',
         'fee_breakdown' => 'array',
+        'payment_terms' => 'array', // ← Make sure this is cast
     ];
+
+    // ✅ ADD THIS RELATIONSHIP
+    public function curriculum(): BelongsTo
+    {
+        return $this->belongsTo(Curriculum::class);
+    }
 
     public function user(): BelongsTo
     {
@@ -66,7 +77,7 @@ class StudentAssessment extends Model
     // Calculate total from breakdown
     public function calculateTotal(): void
     {
-        $this->total_assessment = $this->tuition_fee + $this->other_fees;
+        $this->total_assessment = $this->tuition_fee + $this->other_fees + ($this->registration_fee ?? 0);
         $this->save();
     }
 }

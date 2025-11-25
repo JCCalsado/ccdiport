@@ -412,43 +412,6 @@ const viewStudent = (studentId: number) => {
         <div class="p-6">
           <!-- Overview Tab -->
           <div v-if="activeTab === 'overview'" class="space-y-6">
-            <!-- Payment Trends Chart -->
-            <div>
-              <h3 class="text-lg font-semibold mb-4">Payment Trends (Last 6 Months)</h3>
-              <div class="bg-gray-50 rounded-lg p-4">
-                <div class="flex items-end justify-between h-64 gap-2">
-                  <div
-                    v-for="(trend, index) in paymentTrends"
-                    :key="trend.month"
-                    class="flex-1 flex flex-col items-center"
-                  >
-                    <div class="flex items-center gap-1 mb-2">
-                      <component
-                        v-if="getTrendIcon(index)"
-                        :is="getTrendIcon(index)"
-                        :size="16"
-                        :class="getTrendColor(index)"
-                      />
-                    </div>
-                    <div
-                      class="w-full bg-blue-500 rounded-t hover:bg-blue-600 transition-colors cursor-pointer relative group"
-                      :style="{
-                        height: `${(trend.total / Math.max(...paymentTrends.map(t => t.total))) * 100}%`,
-                        minHeight: '20px',
-                      }"
-                    >
-                      <div
-                        class="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 px-3 py-2 bg-gray-900 text-white text-xs rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap"
-                      >
-                        {{ formatCurrency(trend.total) }}<br />
-                        {{ trend.count }} payments
-                      </div>
-                    </div>
-                    <p class="text-xs text-gray-600 mt-2">{{ formatMonth(trend.month) }}</p>
-                  </div>
-                </div>
-              </div>
-            </div>
 
             <!-- Payment Methods & Year Levels -->
             <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
