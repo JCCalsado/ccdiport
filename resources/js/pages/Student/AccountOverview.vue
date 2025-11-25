@@ -19,20 +19,6 @@ import {
   DollarSign,
 } from 'lucide-vue-next'
 
-onMounted(() => {
-  console.group('📊 Account Overview Data Debug')
-  console.log('Assessment:', latestAssessment.value)
-  console.log('Assessment Lines:', props.assessmentLines)
-  console.log('Subjects (computed):', subjects.value)
-  console.log('Fee Breakdown (prop):', props.feeBreakdown)
-  console.log('Fees Breakdown (computed):', feesBreakdown.value)
-  console.log('Terms of Payment (prop):', props.termsOfPayment)
-  console.log('Terms Breakdown (computed):', termsOfPaymentBreakdown.value)
-  console.log('Total Assessment:', totalAssessmentFee.value)
-  console.log('Total Units:', totalUnits.value)
-  console.groupEnd()
-})
-
 interface SubjectLine {
   subject_code?: string
   code?: string
@@ -212,7 +198,7 @@ const totalUnits = computed(() => {
 
 const feesBreakdown = computed(() => {
   // First try to use the feeBreakdown prop
-  if (props.feeBreakdown && props.feeBreakdown.length > 0) {
+  if ((props as any).feeBreakdown && (props as any).feeBreakdown.length > 0) {
     const breakdown = {
       registration: 0,
       tuition: 0,
@@ -221,7 +207,7 @@ const feesBreakdown = computed(() => {
       other: 0,
     }
     
-    props.feeBreakdown.forEach((fee: any) => {
+    ;(props as any).feeBreakdown.forEach((fee: any) => {
       const amount = Number(fee.amount || 0)
       const category = (fee.category || fee.name || '').toLowerCase()
       
@@ -269,7 +255,7 @@ const totalAssessmentFee = computed(() => {
   }
   
   // Fallback to props.fees
-  return props.fees?.reduce((sum, fee) => sum + Number(fee.amount || 0), 0) ?? 0
+  return (props.fees?.reduce((sum, fee) => sum + Number(fee.amount || 0), 0) ?? 0)
 })
 
 const termsOfPaymentBreakdown = computed(() => {
@@ -467,6 +453,21 @@ const submitPayment = () => {
 const downloadPDF = () => {
   console.log('Download PDF')
 }
+
+// Debugging console output (moved here to ensure computed values exist)
+onMounted(() => {
+  console.group('📊 Account Overview Data Debug')
+  console.log('Assessment:', latestAssessment.value)
+  console.log('Assessment Lines:', props.assessmentLines)
+  console.log('Subjects (computed):', subjects.value)
+  console.log('Fee Breakdown (prop):', (props as any).feeBreakdown)
+  console.log('Fees Breakdown (computed):', feesBreakdown.value)
+  console.log('Terms of Payment (prop):', props.termsOfPayment)
+  console.log('Terms Breakdown (computed):', termsOfPaymentBreakdown.value)
+  console.log('Total Assessment:', totalAssessmentFee.value)
+  console.log('Total Units:', totalUnits.value)
+  console.groupEnd()
+})
 </script>
 
 <template>
