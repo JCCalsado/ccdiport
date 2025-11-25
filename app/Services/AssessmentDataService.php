@@ -67,6 +67,23 @@ class AssessmentDataService
             // Current Term Info
             'currentTerm' => self::getCurrentTerm($latestAssessment),
         ];
+
+        $data = [
+            'student' => self::formatStudent($user),
+            'account' => self::formatAccount($user->account),
+            'assessment' => self::formatAssessment($latestAssessment, $transactions),
+            'assessmentLines' => self::formatAssessmentLines($latestAssessment),
+            'termsOfPayment' => self::formatTermsOfPayment($latestAssessment),
+            'fees' => self::formatFees($transactions),
+            'transactions' => self::formatTransactions($transactions),
+            'stats' => self::calculateStats($transactions),
+            'currentTerm' => self::getCurrentTerm($latestAssessment),
+        ];
+
+        // ✅ ADD VALIDATION
+        self::validateDataStructure($data);
+
+        return $data;
     }
 
     /**
@@ -176,6 +193,8 @@ class AssessmentDataService
                     ($subject['lab_fee'] ?? 0) + 
                     ($subject['misc_fee'] ?? 0)
                 ),
+                'time' => $subject['time'] ?? 'TBA',  // ← ADD THIS
+                'day' => $subject['day'] ?? 'TBA',     // ← ADD THIS
             ];
         })->values()->toArray();
     }
@@ -298,5 +317,59 @@ class AssessmentDataService
             'year' => $year,
             'semester' => $semester,
         ];
+    }
+
+    /**
+     * Validate the unified data structure
+     * 
+     * @param array $data
+     * @return void
+     * @throws \Exception
+     */
+    protected static function validateDataStructure(array $data): void
+    {
+        $requiredKeys = [
+            'student',
+            'account',
+            'assessment',
+            'assessmentLines',
+            'termsOfPayment',
+            'fees',
+            'transactions',
+            'stats',
+            'currentTerm',
+        ];
+
+        foreach ($requiredKeys as $key) {
+            if (!array_key_exists($key, $data)) {
+                throw new \Exception("Missing required key in unified data: {$key}");
+            }
+        }
+
+        // Validate assessment structure
+        if (is_array($data['assessment'])) {
+            $requiredAssessmentKeys = [
+                'assessment_number',
+                'school_year',
+                'semester',
+                'tuition_fee',
+                'other_fees',
+                'total_assessment',
+            ];
+
+            foreach ($requiredAssessmentKeys as $key) {
+                if (!array_key_exists($key, $data['assessment'])) {
+                    \Log::warning("Missing assessment key: {$key}");
+                }
+            }
+        }
+
+        // Validate stats structure
+        $requiredStatsKeys = ['total_fees', 'total_paid', 'remaining_balance'];
+        foreach ($requiredStatsKeys as $key) {
+            if (!isset($data['stats'][$key])) {
+                throw new \Exception("Missing stats key: {$key}");
+            }
+        }
     }
 }
