@@ -19,6 +19,8 @@ use App\Services\CurriculumService;
 use App\Models\Program;
 use App\Models\Curriculum;
 use App\Services\AssessmentDataService;
+use App\Services\StudentCreationService;
+use App\Http\Requests\StoreStudentRequest;
 
 class StudentFeeController extends Controller
 {
@@ -81,11 +83,15 @@ class StudentFeeController extends Controller
     }
 
     protected $curriculumService;
+    protected $studentCreationService;
 
     // Add to constructor
-    public function __construct(CurriculumService $curriculumService)
-    {
+    public function __construct(
+        CurriculumService $curriculumService,
+        StudentCreationService $studentCreationService
+    ) {
         $this->curriculumService = $curriculumService;
+        $this->studentCreationService = $studentCreationService;
     }
     /**
      * Show create assessment form
@@ -543,41 +549,46 @@ class StudentFeeController extends Controller
      */
     public function createStudent()
     {
-        // Get available programs
-        $programs = Program::active()
+        // Get available OBE programs
+        $programs = Program::where('is_active', true)
             ->orderBy('name')
             ->get()
             ->map(function ($program) {
                 return [
                     'id' => $program->id,
                     'code' => $program->code,
-                    'name' => $program->full_name,
+                    'name' => $program->name,
+                    'full_name' => $program->full_name,
+                    'major' => $program->major,
                 ];
             });
 
-        // Get legacy courses for backward compatibility
-        $legacyCourses = User::where('role', 'student')
-            ->whereNotNull('course')
-            ->distinct()
-            ->pluck('course')
-            ->sort()
-            ->values();
-        
-        if ($legacyCourses->isEmpty()) {
-            $legacyCourses = collect([
-                'BS Electrical Engineering Technology',
-                'BS Electronics Engineering Technology',
-                'BS Computer Science',
-                'BS Information Technology',
-            ]);
-        }
+        // Legacy courses for backward compatibility
+        $legacyCourses = collect([
+            'BS Electrical Engineering Technology',
+            'BS Electronics Engineering Technology',
+            'BS Computer Science',
+            'BS Information Technology',
+            'BS Accountancy',
+        ]);
         
         $yearLevels = ['1st Year', '2nd Year', '3rd Year', '4th Year'];
+        $semesters = ['1st Sem', '2nd Sem', 'Summer'];
         
+        // Generate school year options
+        $currentYear = now()->year;
+        $schoolYears = [];
+        for ($i = 0; $i < 3; $i++) {
+            $year = $currentYear + $i;
+            $schoolYears[] = "{$year}-" . ($year + 1);
+        }
+
         return Inertia::render('StudentFees/CreateStudent', [
             'programs' => $programs,
             'legacyCourses' => $legacyCourses,
             'yearLevels' => $yearLevels,
+            'semesters' => $semesters,
+            'schoolYears' => $schoolYears,
         ]);
     }
 
@@ -629,22 +640,11 @@ class StudentFeeController extends Controller
                 'id' => $curriculum->id,
                 'program' => $curriculum->program->full_name,
                 'term' => $curriculum->term_description,
-                'tuition_per_unit' => $curriculum->tuition_per_unit,
-                'lab_fee' => $curriculum->lab_fee,
-                'registration_fee' => $curriculum->registration_fee,
-                'misc_fee' => $curriculum->misc_fee,
                 'courses' => $curriculum->courses->map(function ($course) use ($curriculum) {
-                    $tuition = $course->total_units * $curriculum->tuition_per_unit;
-                    $labFee = $course->has_lab ? $curriculum->lab_fee : 0;
                     return [
                         'code' => $course->code,
                         'title' => $course->title,
-                        'lec_units' => $course->lec_units,
-                        'lab_units' => $course->lab_units,
                         'total_units' => $course->total_units,
-                        'tuition' => $tuition,
-                        'lab_fee' => $labFee,
-                        'total' => $tuition + $labFee,
                     ];
                 }),
                 'totals' => [
@@ -654,7 +654,6 @@ class StudentFeeController extends Controller
                     'misc_fee' => $curriculum->misc_fee,
                     'total_assessment' => $curriculum->calculateTotalAssessment(),
                 ],
-                'payment_terms' => $curriculum->generatePaymentTerms(),
             ],
         ]);
     }
@@ -662,111 +661,27 @@ class StudentFeeController extends Controller
     /**
      * Store new student with OBE curriculum support
      */
-    public function storeStudent(Request $request)
+    public function storeStudent(StoreStudentRequest $request)
     {
-        $validated = $request->validate([
-            'last_name' => 'required|string|max:255',
-            'first_name' => 'required|string|max:255',
-            'middle_initial' => 'nullable|string|max:10',
-            'email' => 'required|email|unique:users,email',
-            'birthday' => 'required|date',
-            'phone' => 'required|string|max:20',
-            'address' => 'required|string|max:255',
-            'year_level' => 'required|string',
-            'student_id' => 'nullable|string|unique:users,student_id',
-            
-            // OBE fields
-            'program_id' => 'nullable|exists:programs,id',
-            'semester' => 'nullable|string',
-            'school_year' => 'nullable|string',
-            
-            // Legacy field
-            'course' => 'nullable|string',
-            
-            // Auto-generate assessment flag
-            'auto_generate_assessment' => 'boolean',
-        ]);
-
-        DB::beginTransaction();
         try {
-            // Auto-generate ID if empty
-            $studentId = $validated['student_id'] ?: $this->generateUniqueStudentId();
-
-            // Determine course name
-            if ($validated['program_id']) {
-                $program = Program::find($validated['program_id']);
-                $courseName = $program->full_name;
-            } else {
-                $courseName = $validated['course'];
-            }
-
-            // Create user record
-            $user = User::create([
-                'last_name' => $validated['last_name'],
-                'first_name' => $validated['first_name'],
-                'middle_initial' => $validated['middle_initial'],
-                'email' => $validated['email'],
-                'birthday' => $validated['birthday'],
-                'phone' => $validated['phone'],
-                'address' => $validated['address'],
-                'year_level' => $validated['year_level'],
-                'course' => $courseName,
-                'student_id' => $studentId,
-                'role' => 'student',
-                'status' => User::STATUS_ACTIVE,
-                'password' => Hash::make('password'),
-            ]);
-
-            // Create Student model entry
-            \App\Models\Student::create([
-                'user_id' => $user->id,
-                'student_id' => $studentId,
-                'last_name' => $validated['last_name'],
-                'first_name' => $validated['first_name'],
-                'middle_initial' => $validated['middle_initial'],
-                'email' => $validated['email'],
-                'course' => $courseName,
-                'year_level' => $validated['year_level'],
-                'status' => 'enrolled',
-                'birthday' => $validated['birthday'],
-                'phone' => $validated['phone'],
-                'address' => $validated['address'],
-                'total_balance' => 0,
-            ]);
-
-            // Create account
-            $user->account()->create(['balance' => 0]);
-
-            // Auto-generate OBE assessment if requested
-            if ($request->boolean('auto_generate_assessment') && $validated['program_id']) {
-                $curriculum = $this->curriculumService->getCurriculumForTerm(
-                    $validated['program_id'],
-                    $validated['year_level'],
-                    $validated['semester'] ?? '1st Sem',
-                    $validated['school_year'] ?? '2025-2026'
-                );
-
-                if ($curriculum) {
-                    $this->curriculumService->generateAssessment($user, $curriculum);
-                }
-            }
-
-            DB::commit();
+            $user = $this->studentCreationService->createStudent($request->validated());
 
             return redirect()
                 ->route('student-fees.show', $user->id)
-                ->with('success', 'Student created successfully with OBE curriculum!');
+                ->with('success', 'Student created successfully! ' . 
+                    ($request->boolean('auto_generate_assessment') 
+                        ? 'Assessment has been generated from OBE curriculum.' 
+                        : 'You can now create an assessment.'));
 
         } catch (\Exception $e) {
-            DB::rollBack();
             \Log::error('Student creation failed', [
                 'error' => $e->getMessage(),
                 'trace' => $e->getTraceAsString(),
             ]);
             
-            return back()->withErrors([
-                'error' => 'Failed to create student: ' . $e->getMessage(),
-            ])->withInput();
+            return back()
+                ->withErrors(['error' => 'Failed to create student: ' . $e->getMessage()])
+                ->withInput();
         }
     }
 
