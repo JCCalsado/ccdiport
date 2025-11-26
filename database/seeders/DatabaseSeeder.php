@@ -51,8 +51,11 @@ class DatabaseSeeder extends Seeder
         $this->call(FeeSeeder::class);
         $this->command->newLine();
 
-        $this->command->info('📋 Step 5: Creating Sample OBE Assessments...');
-        $this->call(SampleOBEAssessmentSeeder::class);
+        // ⚠️ REMOVED: Auto-assessment generation
+        $this->command->warn('⚠️  Step 5: SKIPPED - Automatic assessment generation disabled');
+        $this->command->info('   Create assessments manually through:');
+        $this->command->info('   • StudentFeeController for individual students');
+        $this->command->info('   • CurriculumService for OBE curriculum students');
         $this->command->newLine();
 
         $this->command->info('🔔 Step 6: Seeding Notifications...');
@@ -113,10 +116,12 @@ class DatabaseSeeder extends Seeder
         );
         
         $this->command->newLine();
-        $this->command->info('💡 TIPS');
+        $this->command->info('💡 IMPORTANT NOTES');
         $this->command->info('═══════════════════════════════════════════════════════');
-        $this->command->info('• OBE Curriculum is now active for new student enrollments');
-        $this->command->info('• Create student with Program selection to use OBE system');
+        $this->command->warn('• Students have NO automatic charges - all accounts start at ₱0');
+        $this->command->info('• Create assessments through: StudentFeeController::create()');
+        $this->command->info('• For OBE students: Select program & generate curriculum assessment');
+        $this->command->info('• For legacy students: Manually assign subjects and fees');
         $this->command->info('• Run: php artisan db:seed to re-seed all data');
         $this->command->newLine();
     }
