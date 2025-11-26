@@ -277,21 +277,14 @@ class StudentFeeController extends Controller
      */
     public function show($userId)
     {
-        // Load student
         $student = User::with(['student', 'account'])
             ->where('role', 'student')
             ->findOrFail($userId);
 
-        // ✅ USE UNIFIED DATA SERVICE
-        $data = AssessmentDataService::getUnifiedAssessmentData($student);
+        // Use standardized data service
+        $data = \App\Services\AssessmentDataService::getStandardizedData($student);
 
-        // Add student_model_id for backward compatibility
-        $data['student_model_id'] = $student->student->id ?? null;
-
-        // Render with standardized data
-        return Inertia::render('StudentFees/Show', array_merge($data, [
-            'tab' => request('tab', 'fees'),
-        ]));
+        return Inertia::render('StudentFees/Show', $data);
     }
 
     /**

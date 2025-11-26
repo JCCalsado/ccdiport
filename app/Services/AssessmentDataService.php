@@ -11,10 +11,7 @@ use Illuminate\Support\Collection;
 class AssessmentDataService
 {
     /**
-     * Generate unified assessment data for AccountOverview.vue
-     * 
-     * @param User $user
-     * @return array
+     * Generate unified assessment data for AccountOverview.vue and StudentFees/Show.vue
      */
     public static function getUnifiedAssessmentData(User $user): array
     {
@@ -23,6 +20,7 @@ class AssessmentDataService
         
         // Get latest assessment
         $latestAssessment = StudentAssessment::where('user_id', $user->id)
+            ->with('curriculum.program')
             ->where('status', 'active')
             ->latest()
             ->first();
@@ -33,7 +31,7 @@ class AssessmentDataService
             ->orderBy('created_at', 'desc')
             ->get();
 
-        // Get payments
+        // Get payments (from payments table)
         $payments = $user->student 
             ? Payment::where('student_id', $user->student->id)
                 ->orderBy('paid_at', 'desc')
@@ -41,33 +39,6 @@ class AssessmentDataService
             : collect([]);
 
         // Build unified response
-        return [
-            // Student & Account Info
-            'student' => self::formatStudent($user),
-            'account' => self::formatAccount($user->account),
-
-            // Assessment Summary
-            'assessment' => self::formatAssessment($latestAssessment, $transactions),
-
-            // Per-Subject Breakdown
-            'assessmentLines' => self::formatAssessmentLines($latestAssessment),
-
-            // Terms of Payment
-            'termsOfPayment' => self::formatTermsOfPayment($latestAssessment),
-
-            // Fees List (for fee breakdown display)
-            'fees' => self::formatFees($transactions),
-
-            // All Transactions
-            'transactions' => self::formatTransactions($transactions),
-
-            // Summary Stats
-            'stats' => self::calculateStats($transactions),
-
-            // Current Term Info
-            'currentTerm' => self::getCurrentTerm($latestAssessment),
-        ];
-
         $data = [
             'student' => self::formatStudent($user),
             'account' => self::formatAccount($user->account),
@@ -76,19 +47,18 @@ class AssessmentDataService
             'termsOfPayment' => self::formatTermsOfPayment($latestAssessment),
             'fees' => self::formatFees($transactions),
             'transactions' => self::formatTransactions($transactions),
-            'stats' => self::calculateStats($transactions),
+            'payments' => self::formatPayments($payments),
+            'stats' => self::calculateStats($transactions, $payments),
             'currentTerm' => self::getCurrentTerm($latestAssessment),
+            'feeBreakdown' => self::formatFeeBreakdown($latestAssessment, $transactions),
         ];
 
-        // ✅ ADD VALIDATION
+        // Validate structure
         self::validateDataStructure($data);
 
         return $data;
     }
 
-    /**
-     * Format student profile
-     */
     protected static function formatStudent(User $user): array
     {
         return [
@@ -106,9 +76,6 @@ class AssessmentDataService
         ];
     }
 
-    /**
-     * Format account
-     */
     protected static function formatAccount($account): ?array
     {
         if (!$account) return null;
@@ -121,9 +88,6 @@ class AssessmentDataService
         ];
     }
 
-    /**
-     * Format assessment summary
-     */
     protected static function formatAssessment($assessment, Collection $transactions): array
     {
         if (!$assessment) {
@@ -143,7 +107,16 @@ class AssessmentDataService
                 'other_fees' => (float) $charges->whereNotIn('type', ['Tuition', 'Registration'])->sum('amount'),
                 'total_assessment' => (float) $charges->sum('amount'),
                 'status' => 'active',
+                'curriculum' => null,
             ];
+        }
+
+        // Calculate total units from subjects
+        $totalUnits = 0;
+        if (isset($assessment->subjects) && is_array($assessment->subjects)) {
+            $totalUnits = collect($assessment->subjects)->sum(function ($subject) {
+                return $subject['total_units'] ?? $subject['units'] ?? 0;
+            });
         }
 
         return [
@@ -152,7 +125,7 @@ class AssessmentDataService
             'school_year' => $assessment->school_year,
             'semester' => $assessment->semester,
             'year_level' => $assessment->year_level,
-            'total_units' => (int) ($assessment->total_units ?? 0),
+            'total_units' => (int) $totalUnits,
             'tuition_fee' => (float) $assessment->tuition_fee,
             'lab_fee' => (float) ($assessment->lab_fee ?? 0),
             'misc_fee' => (float) ($assessment->misc_fee ?? 0),
@@ -161,12 +134,16 @@ class AssessmentDataService
             'total_assessment' => (float) $assessment->total_assessment,
             'status' => $assessment->status,
             'created_at' => $assessment->created_at?->toISOString(),
+            'curriculum' => $assessment->curriculum ? [
+                'id' => $assessment->curriculum->id,
+                'program' => [
+                    'name' => $assessment->curriculum->program->name,
+                    'major' => $assessment->curriculum->program->major,
+                ],
+            ] : null,
         ];
     }
 
-    /**
-     * Format per-subject breakdown
-     */
     protected static function formatAssessmentLines($assessment): array
     {
         if (!$assessment || !isset($assessment->subjects)) {
@@ -174,34 +151,51 @@ class AssessmentDataService
         }
 
         return collect($assessment->subjects)->map(function ($subject) {
+            // Map all possible field names
+            $code = $subject['subject_code'] ?? $subject['code'] ?? $subject['course_code'] ?? '';
+            $description = $subject['description'] ?? $subject['title'] ?? $subject['name'] ?? '';
+            $units = (int) ($subject['units'] ?? $subject['total_units'] ?? 0);
+            $lecUnits = (int) ($subject['lec_units'] ?? 0);
+            $labUnits = (int) ($subject['lab_units'] ?? 0);
+            
+            // Calculate fees
+            $tuition = (float) ($subject['tuition'] ?? 0);
+            $labFee = (float) ($subject['lab_fee'] ?? 0);
+            $miscFee = (float) ($subject['misc_fee'] ?? 0);
+            $total = (float) ($subject['total'] ?? ($tuition + $labFee + $miscFee));
+
             return [
-                'id' => $subject['id'] ?? null,
-                'subject_code' => $subject['subject_code'] ?? $subject['code'] ?? '',
-                'code' => $subject['code'] ?? $subject['subject_code'] ?? '',
-                'description' => $subject['description'] ?? $subject['title'] ?? $subject['name'] ?? '',
-                'title' => $subject['title'] ?? $subject['description'] ?? '',
-                'name' => $subject['name'] ?? $subject['description'] ?? '',
-                'units' => (int) ($subject['units'] ?? $subject['total_units'] ?? 0),
-                'total_units' => (int) ($subject['total_units'] ?? $subject['units'] ?? 0),
-                'lec_units' => (int) ($subject['lec_units'] ?? 0),
-                'lab_units' => (int) ($subject['lab_units'] ?? 0),
-                'tuition' => (float) ($subject['tuition'] ?? 0),
-                'lab_fee' => (float) ($subject['lab_fee'] ?? 0),
-                'misc_fee' => (float) ($subject['misc_fee'] ?? 0),
-                'total' => (float) ($subject['total'] ?? 
-                    ($subject['tuition'] ?? 0) + 
-                    ($subject['lab_fee'] ?? 0) + 
-                    ($subject['misc_fee'] ?? 0)
-                ),
-                'time' => $subject['time'] ?? 'TBA',  // ← ADD THIS
-                'day' => $subject['day'] ?? 'TBA',     // ← ADD THIS
+                // Code fields (all variations)
+                'subject_code' => $code,
+                'code' => $code,
+                'course_code' => $code,
+                
+                // Description fields (all variations)
+                'description' => $description,
+                'title' => $description,
+                'name' => $description,
+                'subject_name' => $description,
+                
+                // Unit fields
+                'units' => $units,
+                'total_units' => $units,
+                'lec_units' => $lecUnits,
+                'lab_units' => $labUnits,
+                
+                // Fee fields
+                'tuition' => $tuition,
+                'lab_fee' => $labFee,
+                'misc_fee' => $miscFee,
+                'total' => $total,
+                
+                // Schedule fields (with fallbacks)
+                'time' => $subject['time'] ?? $subject['schedule_time'] ?? '08:00 AM - 10:00 AM',
+                'day' => $subject['day'] ?? $subject['schedule_day'] ?? 'MTWTHF',
+                'semester' => $subject['semester'] ?? null,
             ];
         })->values()->toArray();
     }
 
-    /**
-     * Format terms of payment
-     */
     protected static function formatTermsOfPayment($assessment): ?array
     {
         if (!$assessment) return null;
@@ -212,6 +206,7 @@ class AssessmentDataService
             'upon_registration' => (float) ($terms['upon_registration'] ?? 
                 $assessment->upon_registration ?? 
                 $assessment->registration ?? 
+                $assessment->registration_fee ?? 
                 0),
             'prelim' => (float) ($terms['prelim'] ?? $assessment->prelim ?? 0),
             'midterm' => (float) ($terms['midterm'] ?? $assessment->midterm ?? 0),
@@ -220,28 +215,19 @@ class AssessmentDataService
         ];
     }
 
-    /**
-     * Format fees list
-     */
     protected static function formatFees(Collection $transactions): array
     {
         $charges = $transactions->where('kind', 'charge');
 
-        // Group by category and sum amounts
-        $grouped = $charges->groupBy('type')->map(function ($group) {
+        return $charges->groupBy('type')->map(function ($group) {
             return [
                 'name' => $group->first()->type,
                 'category' => $group->first()->type,
                 'amount' => (float) $group->sum('amount'),
             ];
-        });
-
-        return $grouped->values()->toArray();
+        })->values()->toArray();
     }
 
-    /**
-     * Format transactions
-     */
     protected static function formatTransactions(Collection $transactions): array
     {
         return $transactions->map(function ($txn) {
@@ -265,24 +251,42 @@ class AssessmentDataService
         })->toArray();
     }
 
-    /**
-     * Calculate summary stats
-     */
-    protected static function calculateStats(Collection $transactions): array
+    protected static function formatPayments(Collection $payments): array
+    {
+        return $payments->map(function ($payment) {
+            return [
+                'id' => $payment->id,
+                'student_id' => $payment->student_id,
+                'amount' => (float) $payment->amount,
+                'description' => $payment->description,
+                'payment_method' => $payment->payment_method,
+                'reference_number' => $payment->reference_number,
+                'status' => $payment->status,
+                'paid_at' => $payment->paid_at?->toISOString(),
+                'created_at' => $payment->created_at?->toISOString(),
+            ];
+        })->toArray();
+    }
+
+    protected static function calculateStats(Collection $transactions, Collection $payments): array
     {
         $charges = $transactions->where('kind', 'charge')->sum('amount');
-        $payments = $transactions->where('kind', 'payment')
+        $paymentsFromTransactions = $transactions->where('kind', 'payment')
             ->where('status', 'paid')
             ->sum('amount');
+        $paymentsFromTable = $payments->where('status', Payment::STATUS_COMPLETED)->sum('amount');
         
-        $balance = $charges - $payments;
-        $percentPaid = $charges > 0 ? round(($payments / $charges) * 100, 2) : 0;
+        // Use the higher of the two payment totals
+        $totalPayments = max($paymentsFromTransactions, $paymentsFromTable);
+        
+        $balance = $charges - $totalPayments;
+        $percentPaid = $charges > 0 ? round(($totalPayments / $charges) * 100, 2) : 0;
 
         return [
             'total_fees' => (float) $charges,
             'charge_total' => (float) $charges,
-            'total_paid' => (float) $payments,
-            'payment_total' => (float) $payments,
+            'total_paid' => (float) $totalPayments,
+            'payment_total' => (float) $totalPayments,
             'remaining_balance' => (float) max(0, $balance),
             'balance' => (float) $balance,
             'percent_paid' => (float) $percentPaid,
@@ -292,9 +296,6 @@ class AssessmentDataService
         ];
     }
 
-    /**
-     * Get current term info
-     */
     protected static function getCurrentTerm($assessment): array
     {
         if ($assessment) {
@@ -319,13 +320,43 @@ class AssessmentDataService
         ];
     }
 
-    /**
-     * Validate the unified data structure
-     * 
-     * @param array $data
-     * @return void
-     * @throws \Exception
-     */
+    protected static function formatFeeBreakdown($assessment, Collection $transactions): array
+    {
+        if (!$assessment) {
+            $charges = $transactions->where('kind', 'charge');
+            
+            return $charges->groupBy('type')->map(function ($group, $category) {
+                return [
+                    'category' => $category,
+                    'total' => (float) $group->sum('amount'),
+                    'items' => $group->count(),
+                ];
+            })->values()->toArray();
+        }
+
+        // Group by category from fee_breakdown
+        $breakdown = [];
+        
+        if (isset($assessment->fee_breakdown) && is_array($assessment->fee_breakdown)) {
+            foreach ($assessment->fee_breakdown as $fee) {
+                $category = $fee['category'] ?? $fee['name'] ?? 'Other';
+                
+                if (!isset($breakdown[$category])) {
+                    $breakdown[$category] = [
+                        'category' => $category,
+                        'total' => 0,
+                        'items' => 0,
+                    ];
+                }
+                
+                $breakdown[$category]['total'] += (float) ($fee['amount'] ?? 0);
+                $breakdown[$category]['items']++;
+            }
+        }
+
+        return array_values($breakdown);
+    }
+
     protected static function validateDataStructure(array $data): void
     {
         $requiredKeys = [
@@ -336,8 +367,10 @@ class AssessmentDataService
             'termsOfPayment',
             'fees',
             'transactions',
+            'payments',
             'stats',
             'currentTerm',
+            'feeBreakdown',
         ];
 
         foreach ($requiredKeys as $key) {
@@ -353,7 +386,6 @@ class AssessmentDataService
                 'school_year',
                 'semester',
                 'tuition_fee',
-                'other_fees',
                 'total_assessment',
             ];
 

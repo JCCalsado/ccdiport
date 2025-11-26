@@ -102,13 +102,28 @@ interface Student {
 }
 
 interface Props {
-  student?: Student
-  account?: Account
-  assessment?: Assessment
+  student?: Record<string, any>
+  account?: Record<string, any>
+  assessment?: {
+    assessment_number?: string
+    school_year?: string
+    semester?: string
+    status?: string
+    total_assessment?: number
+    tuition_fee?: number
+    other_fees?: number
+    registration_fee?: number
+    lab_fee?: number
+    misc_fee?: number
+    subjects?: SubjectLine[]
+    total_units?: number
+  }
   assessmentLines?: SubjectLine[]
   termsOfPayment?: Record<string, number> | null
   transactions?: Transaction[]
-  fees?: Fee[]
+  fees?: { name: string; amount: number; category?: string }[]
+  payments?: any[]  // ✅ FIXED
+  feeBreakdown?: any[]  // ✅ FIXED
   currentTerm?: { year: number; semester: string }
   tab?: 'fees' | 'history' | 'payment'
   stats?: {

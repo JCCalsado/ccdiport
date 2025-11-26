@@ -6,6 +6,8 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { ArrowLeft } from 'lucide-vue-next';
+import { ref, computed } from 'vue';
+import axios from 'axios';
 
 const breadcrumbs = [
     { title: 'Dashboard', href: route('dashboard') },
@@ -26,6 +28,37 @@ const form = useForm({
     address: '',
     phone: '',
     student_id: '',
+    program_id: '',
+    semester: '1st Sem',
+    school_year: '2025-2026',
+    auto_generate_assessment: true,
+});
+
+const curriculumPreview = ref(null);
+
+const fetchCurriculumPreview = async () => {
+  if (!form.program_id || !form.year_level || !form.semester || !form.school_year) {
+    return;
+  }
+
+  try {
+    const response = await axios.post(route('student-fees.curriculum.preview'), {
+      program_id: form.program_id,
+      year_level: form.year_level,
+      semester: form.semester,
+      school_year: form.school_year,
+    });
+    
+    curriculumPreview.value = response.data.curriculum;
+  } catch (error) {
+    console.error('Failed to fetch curriculum preview:', error);
+    curriculumPreview.value = null;
+  }
+};
+
+const totalUnits = computed(() => {
+  if (!curriculumPreview.value?.courses) return 0;
+  return curriculumPreview.value.courses.reduce((sum, course) => sum + course.total_units, 0);
 });
 
 const yearLevels = ['1st Year', '2nd Year', '3rd Year', '4th Year'];
@@ -174,68 +207,109 @@ const submit = () => {
                     </div>
                 </div>
 
-                <!-- Academic Information -->
-                <div class="bg-white rounded-lg shadow-sm border p-6">
-                    <h2 class="text-lg font-semibold mb-4">Academic Information</h2>
-                    <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-                        <div class="space-y-2">
-                            <Label for="student_id">Student ID (Optional)</Label>
-                            <Input
-                                id="student_id"
-                                v-model="form.student_id"
-                                placeholder="Auto-generated if empty"
-                            />
-                            <p class="text-xs text-gray-500">Leave empty to auto-generate</p>
-                            <p v-if="form.errors.student_id" class="text-sm text-red-500">
-                                {{ form.errors.student_id }}
-                            </p>
-                        </div>
-
-                        <div class="space-y-2">
-                            <Label for="course">Course *</Label>
-                            <select
-                                id="course"
-                                v-model="form.course"
-                                required
-                                class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                            >
-                                <option value="">Select course</option>
-                                <option
-                                    v-for="course in courses"
-                                    :key="course"
-                                    :value="course"
-                                >
-                                    {{ course }}
-                                </option>
-                            </select>
-                            <p v-if="form.errors.course" class="text-sm text-red-500">
-                                {{ form.errors.course }}
-                            </p>
-                        </div>
-
-                        <div class="space-y-2">
-                            <Label for="year_level">Year Level *</Label>
-                            <select
-                                id="year_level"
-                                v-model="form.year_level"
-                                required
-                                class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                            >
-                                <option value="">Select year level</option>
-                                <option
-                                    v-for="year in yearLevels"
-                                    :key="year"
-                                    :value="year"
-                                >
-                                    {{ year }}
-                                </option>
-                            </select>
-                            <p v-if="form.errors.year_level" class="text-sm text-red-500">
-                                {{ form.errors.year_level }}
-                            </p>
-                        </div>
+                <!-- Academic Information Section -->
+                <Card>
+                    <CardHeader>
+                    <CardTitle>Academic Information</CardTitle>
+                    </CardHeader>
+                    <CardContent class="space-y-4">
+                    <!-- Program Selection (OBE) -->
+                    <div class="space-y-2">
+                        <Label for="program_id">Program (OBE Curriculum)</Label>
+                        <select
+                        id="program_id"
+                        v-model="form.program_id"
+                        @change="handleProgramChange"
+                        class="w-full px-3 py-2 border rounded-lg"
+                        >
+                        <option value="">Select Program</option>
+                        <option v-for="program in programs" :key="program.id" :value="program.id">
+                            {{ program.name }}
+                        </option>
+                        </select>
                     </div>
-                </div>
+
+                    <!-- Year Level -->
+                    <div class="space-y-2">
+                        <Label for="year_level">Year Level *</Label>
+                        <select
+                        id="year_level"
+                        v-model="form.year_level"
+                        @change="fetchAvailableTerms"
+                        required
+                        class="w-full px-3 py-2 border rounded-lg"
+                        >
+                        <option value="">Select Year Level</option>
+                        <option v-for="level in yearLevels" :key="level" :value="level">
+                            {{ level }}
+                        </option>
+                        </select>
+                    </div>
+
+                    <!-- Semester -->
+                    <div class="space-y-2">
+                        <Label for="semester">Semester *</Label>
+                        <select
+                        id="semester"
+                        v-model="form.semester"
+                        @change="fetchCurriculumPreview"
+                        required
+                        class="w-full px-3 py-2 border rounded-lg"
+                        >
+                        <option value="">Select Semester</option>
+                        <option value="1st Sem">1st Semester</option>
+                        <option value="2nd Sem">2nd Semester</option>
+                        <option value="Summer">Summer</option>
+                        </select>
+                    </div>
+
+                    <!-- School Year -->
+                    <div class="space-y-2">
+                        <Label for="school_year">School Year *</Label>
+                        <select
+                        id="school_year"
+                        v-model="form.school_year"
+                        @change="fetchCurriculumPreview"
+                        required
+                        class="w-full px-3 py-2 border rounded-lg"
+                        >
+                        <option value="">Select School Year</option>
+                        <option value="2025-2026">2025-2026</option>
+          <option value="2026-2027">2026-2027</option>
+        </select>
+      </div>
+
+      <!-- Auto-generate Assessment Toggle -->
+      <div class="flex items-center space-x-2">
+        <input
+          id="auto_generate"
+          v-model="form.auto_generate_assessment"
+          type="checkbox"
+          class="rounded"
+          checked
+        />
+        <Label for="auto_generate">
+          Automatically generate assessment from curriculum
+        </Label>
+      </div>
+
+      <!-- Assessment Preview (if curriculum found) -->
+      <div v-if="curriculumPreview" class="mt-4 p-4 bg-blue-50 rounded-lg border border-blue-200">
+        <h4 class="font-semibold text-blue-900 mb-2">Assessment Preview</h4>
+        <div class="space-y-1 text-sm">
+          <p><strong>Program:</strong> {{ curriculumPreview.program }}</p>
+          <p><strong>Total Units:</strong> {{ totalUnits }}</p>
+          <p><strong>Tuition Fee:</strong> {{ formatCurrency(curriculumPreview.totals.tuition) }}</p>
+          <p><strong>Lab Fees:</strong> {{ formatCurrency(curriculumPreview.totals.lab_fees) }}</p>
+          <p><strong>Registration:</strong> {{ formatCurrency(curriculumPreview.totals.registration_fee) }}</p>
+          <p><strong>Misc Fee:</strong> {{ formatCurrency(curriculumPreview.totals.misc_fee) }}</p>
+          <p class="text-lg font-bold text-blue-700 mt-2">
+            Total Assessment: {{ formatCurrency(curriculumPreview.totals.total_assessment) }}
+          </p>
+        </div>
+      </div>
+    </CardContent>
+  </Card>
 
                 <!-- Password Information -->
                 <div class="bg-blue-50 border border-blue-200 rounded-lg p-4">
