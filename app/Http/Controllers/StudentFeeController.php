@@ -279,16 +279,39 @@ class StudentFeeController extends Controller
     }
 
     /**
-     * Show student fee details (UNIFIED VERSION)
+     * Show student fee details (UNIFIED VERSION) - FIXED
      */
     public function show($userId)
     {
-        $student = User::with(['student', 'account'])
+        $student = User::with(['student', 'account', 'paymentTerms'])
             ->where('role', 'student')
             ->findOrFail($userId);
 
-        // ✅ FIX: Use correct method name
+        // ✅ Use AssessmentDataService for unified data structure
         $data = \App\Services\AssessmentDataService::getUnifiedAssessmentData($student);
+
+        // ✅ ENSURE empty arrays for safety
+        $data['payments'] = $data['payments'] ?? [];
+        $data['feeBreakdown'] = $data['feeBreakdown'] ?? [];
+        $data['paymentTerms'] = $student->paymentTerms->map(function ($term) {
+            return [
+                'id' => $term->id,
+                'term_name' => $term->term_name,
+                'term_order' => $term->term_order,
+                'amount' => (float) $term->amount,
+                'paid_amount' => (float) $term->paid_amount,
+                'remaining_balance' => (float) $term->remaining_balance,
+                'due_date' => $term->due_date?->format('Y-m-d'),
+                'status' => $term->status,
+            ];
+        })->toArray();
+
+        // ✅ Add payment terms stats
+        $data['paymentTermsStats'] = [
+            'total_scheduled' => (float) $student->paymentTerms->sum('amount'),
+            'total_paid' => (float) $student->paymentTerms->sum('paid_amount'),
+            'remaining_due' => (float) $student->paymentTerms->sum(fn($t) => $t->amount - $t->paid_amount),
+        ];
 
         return Inertia::render('StudentFees/Show', $data);
     }

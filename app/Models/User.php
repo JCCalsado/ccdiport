@@ -70,6 +70,14 @@ class User extends Authenticatable
     }
 
     /**
+     * ✅ NEW: Payment terms relationship
+     */
+    public function paymentTerms(): HasMany
+    {
+        return $this->hasMany(StudentPaymentTerm::class);
+    }
+
+    /**
      * Get the user's full name.
      * This is the main accessor that will be serialized in API responses.
      */

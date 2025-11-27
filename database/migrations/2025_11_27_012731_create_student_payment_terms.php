@@ -24,6 +24,7 @@ return new class extends Migration
             
             $table->index(['user_id', 'school_year', 'semester']);
             $table->index(['status', 'due_date']);
+            $table->index('term_order');
         });
     }
 
