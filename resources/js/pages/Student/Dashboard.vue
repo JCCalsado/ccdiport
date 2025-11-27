@@ -1,5 +1,4 @@
 <script setup lang="ts">
-
 import { computed, ref } from 'vue'
 import { Head, Link, router } from '@inertiajs/vue3'
 import AppLayout from '@/layouts/AppLayout.vue'
@@ -7,19 +6,25 @@ import Breadcrumbs from '@/components/Breadcrumbs.vue'
 import TransactionDetailsDialog from '@/components/TransactionDetailsDialog.vue'
 import { Button } from '@/components/ui/button'
 import { useFormatters } from '@/composables/useFormatters'
-import type { Transaction, Account, Notification, TransactionStats } from '@/types/transaction'
+import type { Transaction } from '@/types/transaction'
 import {
   Wallet,
   Calendar,
   AlertCircle,
   CheckCircle,
-  TrendingUp,
   Clock,
   FileText,
   CreditCard,
   Bell,
   ArrowRight,
 } from 'lucide-vue-next'
+
+interface Account {
+  id: number
+  balance: number
+  created_at?: string
+  updated_at?: string
+}
 
 interface PaymentTerm {
   id: number
@@ -29,7 +34,16 @@ interface PaymentTerm {
   remaining_balance: number
   due_date: string | null
   status: 'pending' | 'paid' | 'partial'
-  is_overdue: boolean
+  is_overdue?: boolean
+}
+
+interface Notification {
+  id: number
+  title: string
+  message: string
+  start_date: string | null
+  end_date: string | null
+  target_role: string
 }
 
 interface Props {
@@ -47,7 +61,6 @@ interface Props {
 
 const props = defineProps<Props>()
 
-// Use our reusable formatter composable
 const { formatCurrency, formatDate, formatPercentage } = useFormatters()
 
 const breadcrumbs = [
@@ -61,8 +74,8 @@ const selectedTransaction = ref<Transaction | null>(null)
 
 // Computed: Payment percentage
 const paymentPercentage = computed(() => {
-  if (props.stats.total_fees === 0) return 0
-  return Math.round((props.stats.total_paid / props.stats.total_fees) * 100)
+  if (props.stats.total_scheduled === 0) return 0
+  return Math.round((props.stats.total_paid / props.stats.total_scheduled) * 100)
 })
 
 // Computed: Active notifications (filtered by date)
@@ -77,14 +90,14 @@ const activeNotifications = computed(() => {
 })
 
 // Computed: Has outstanding balance
-const hasOutstandingBalance = computed(() => props.stats.remaining_balance > 0)
+const hasOutstandingBalance = computed(() => props.stats.remaining_due > 0)
 
 // Computed: Status message
 const statusMessage = computed(() => {
   if (hasOutstandingBalance.value) {
     return {
       title: 'Payment Reminder',
-      message: `You have an outstanding balance of ${formatCurrency(props.stats.remaining_balance)}`,
+      message: `You have an outstanding balance of ${formatCurrency(props.stats.remaining_due)}`,
       icon: AlertCircle,
       class: 'bg-red-50 border-red-200 text-red-900',
       buttonClass: 'bg-red-600 hover:bg-red-700',
@@ -109,19 +122,16 @@ const viewTransaction = (transaction: Transaction) => {
 
 const handlePayNow = (transaction?: Transaction) => {
   if (transaction) {
-    // Navigate to account with specific transaction
     router.visit(route('student.account', {
       tab: 'payment',
       transaction_id: transaction.id,
     }))
   } else {
-    // Navigate to account payment tab
     router.visit(route('student.account', { tab: 'payment' }))
   }
 }
 
 const handleDownload = (transaction: Transaction) => {
-  // Implement download logic
   router.visit(route('transactions.download', { 
     transaction: transaction.id 
   }))
@@ -143,20 +153,20 @@ const handleDownload = (transaction: Transaction) => {
 
       <!-- Quick Stats Grid -->
       <div class="grid grid-cols-1 md:grid-cols-4 gap-6">
-        <!-- Total Fees Card -->
+        <!-- Total Scheduled -->
         <div class="bg-white rounded-lg shadow-md p-6 hover:shadow-lg transition-shadow">
           <div class="flex items-center justify-between mb-2">
             <div class="p-3 bg-blue-100 rounded-lg">
               <FileText :size="24" class="text-blue-600" />
             </div>
           </div>
-          <p class="text-sm text-gray-600">Total Assessment Fee</p>
+          <p class="text-sm text-gray-600">Total Scheduled</p>
           <p class="text-2xl font-bold text-gray-900">
-            {{ formatCurrency(stats.total_fees) }}
+            {{ formatCurrency(stats.total_scheduled) }}
           </p>
         </div>
 
-        <!-- Total Paid Card -->
+        <!-- Total Paid -->
         <div class="bg-white rounded-lg shadow-md p-6 hover:shadow-lg transition-shadow">
           <div class="flex items-center justify-between mb-2">
             <div class="p-3 bg-green-100 rounded-lg">
@@ -169,7 +179,7 @@ const handleDownload = (transaction: Transaction) => {
           </p>
         </div>
 
-        <!-- Remaining Balance Card -->
+        <!-- Remaining Due -->
         <div class="bg-white rounded-lg shadow-md p-6 hover:shadow-lg transition-shadow">
           <div class="flex items-center justify-between mb-2">
             <div :class="[
@@ -179,22 +189,22 @@ const handleDownload = (transaction: Transaction) => {
               <Wallet :size="24" :class="hasOutstandingBalance ? 'text-red-600' : 'text-green-600'" />
             </div>
           </div>
-          <p class="text-sm text-gray-600">Remaining Balance</p>
+          <p class="text-sm text-gray-600">Remaining Due</p>
           <p class="text-2xl font-bold" :class="hasOutstandingBalance ? 'text-red-600' : 'text-green-600'">
-            {{ formatCurrency(stats.remaining_balance) }}
+            {{ formatCurrency(stats.remaining_due) }}
           </p>
         </div>
 
-        <!-- Pending Charges Card -->
+        <!-- Upcoming Payments -->
         <div class="bg-white rounded-lg shadow-md p-6 hover:shadow-lg transition-shadow">
           <div class="flex items-center justify-between mb-2">
             <div class="p-3 bg-yellow-100 rounded-lg">
               <Clock :size="24" class="text-yellow-600" />
             </div>
           </div>
-          <p class="text-sm text-gray-600">Pending Charges</p>
+          <p class="text-sm text-gray-600">Upcoming Payments</p>
           <p class="text-2xl font-bold text-yellow-600">
-            {{ stats.pending_charges_count }}
+            {{ stats.upcoming_due_count }}
           </p>
         </div>
       </div>
@@ -215,7 +225,7 @@ const handleDownload = (transaction: Transaction) => {
         </div>
         <div class="flex justify-between mt-2 text-sm text-gray-600">
           <span>{{ formatCurrency(stats.total_paid) }} paid</span>
-          <span>{{ formatCurrency(stats.total_fees) }} total</span>
+          <span>{{ formatCurrency(stats.total_scheduled) }} scheduled</span>
         </div>
       </div>
 
