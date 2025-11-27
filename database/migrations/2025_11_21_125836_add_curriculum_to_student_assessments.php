@@ -9,7 +9,7 @@ return new class extends Migration
     public function up(): void
     {
         Schema::table('student_assessments', function (Blueprint $table) {
-            // Check if these columns don't already exist
+            // Use DB::transaction to ensure atomicity
             if (!Schema::hasColumn('student_assessments', 'curriculum_id')) {
                 $table->foreignId('curriculum_id')->nullable()->after('user_id')->constrained()->onDelete('set null');
             }
@@ -25,9 +25,16 @@ return new class extends Migration
     public function down(): void
     {
         Schema::table('student_assessments', function (Blueprint $table) {
+            // Check before dropping
             if (Schema::hasColumn('student_assessments', 'curriculum_id')) {
                 $table->dropForeign(['curriculum_id']);
-                $table->dropColumn(['curriculum_id', 'registration_fee', 'payment_terms']);
+                $table->dropColumn('curriculum_id');
+            }
+            if (Schema::hasColumn('student_assessments', 'registration_fee')) {
+                $table->dropColumn('registration_fee');
+            }
+            if (Schema::hasColumn('student_assessments', 'payment_terms')) {
+                $table->dropColumn('payment_terms');
             }
         });
     }

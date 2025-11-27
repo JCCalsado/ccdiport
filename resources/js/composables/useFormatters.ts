@@ -10,29 +10,28 @@ export function useFormatters() {
     }).format(numericAmount)
   }
 
-  const formatDate = (
-    date: string | Date,
-    format: 'short' | 'long' | 'medium' = 'medium'
-  ): string => {
-    if (!date) return 'N/A'
-    const dateObj = typeof date === 'string' ? new Date(date) : date
-    if (isNaN(dateObj.getTime())) return 'Invalid Date'
-
-    const formats: Record<'short' | 'medium' | 'long', Intl.DateTimeFormatOptions> = {
-      short: { month: 'short', day: 'numeric', year: 'numeric' },
-      medium: { month: 'long', day: 'numeric', year: 'numeric' },
-      long: {
-        weekday: 'long',
-        month: 'long',
-        day: 'numeric',
-        year: 'numeric',
-        hour: '2-digit',
-        minute: '2-digit',
-      },
+  const formatDate = (date: string | Date | null, format: 'short' | 'long' = 'long') => {
+    if (!date) return 'N/A';
+    
+    // ✅ Handle both ISO strings and Date objects
+    const dateObj = typeof date === 'string' ? new Date(date) : date;
+    
+    if (format === 'short') {
+      return dateObj.toLocaleDateString('en-US', { 
+        month: 'short', 
+        day: 'numeric', 
+        year: 'numeric' 
+      });
     }
-
-    return dateObj.toLocaleDateString('en-US', formats[format])
-  }
+    
+    return dateObj.toLocaleDateString('en-US', { 
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit'
+    });
+  };
 
   const formatDateTime = (date: string | Date) => {
     if (!date) return { date: 'N/A', time: 'N/A' }

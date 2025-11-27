@@ -83,6 +83,12 @@ interface Props {
         total: number;
         items: number;
     }>;
+    paymentTerms?: PaymentTerms[]; // ✅ ADD THIS
+    paymentTermsStats?: {
+        total_scheduled: number;
+        total_paid: number;
+        remaining_due: number;
+    };
 }
 
 const props = defineProps<Props>();
@@ -104,6 +110,7 @@ const paymentForm = useForm({
     payment_method: 'cash',
     description: '',
     payment_date: new Date().toISOString().split('T')[0],
+    term_id: null as number | null,
 });
 
 const totalUnits = computed(() => {
@@ -248,6 +255,29 @@ const formatDate = (date: string) => {
                                     />
                                     <p v-if="paymentForm.errors.payment_date" class="text-sm text-red-500">
                                         {{ paymentForm.errors.payment_date }}
+                                    </p>
+                                </div>
+
+                                <!-- Add after payment_date field -->
+                                <div class="space-y-2">
+                                    <Label for="term_id">Apply to Payment Term (Optional)</Label>
+                                    <select
+                                        id="term_id"
+                                        v-model="paymentForm.term_id"
+                                        class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                                    >
+                                        <option :value="null">Apply to earliest unpaid term</option>
+                                        <option
+                                            v-for="term in props.paymentTerms"
+                                            :key="term.id"
+                                            :value="term.id"
+                                            :disabled="term.status === 'paid'"
+                                        >
+                                            {{ term.term_name }} - {{ formatCurrency(term.remaining_balance) }} remaining
+                                        </option>
+                                    </select>
+                                    <p class="text-xs text-gray-500">
+                                        Leave blank to automatically apply to earliest unpaid term(s)
                                     </p>
                                 </div>
 
@@ -397,10 +427,10 @@ const formatDate = (date: string) => {
                                                 {{ subject.total_units }}
                                             </td>
                                             <td class="px-6 py-4 whitespace-nowrap text-center text-sm text-gray-700 border-r border-gray-200">
-                                                08:00 AM - 10:00 AM
+                                                {{ subject.time || '08:00 AM - 10:00 AM' }}
                                             </td>
                                             <td class="px-6 py-4 whitespace-nowrap text-center text-sm text-gray-700">
-                                                MTWTHF
+                                                {{ subject.day || 'MTWTHF' }}
                                             </td>
                                         </tr>
                                         <!-- Total Row -->
@@ -436,11 +466,15 @@ const formatDate = (date: string) => {
                                 </div>
                                 <div class="flex justify-between py-3 border-b-2 border-gray-200 hover:bg-gray-100 px-3 rounded transition-colors">
                                     <span class="text-base font-semibold text-gray-800">Lab. Fee:</span>
-                                    <span class="text-base font-bold text-gray-900">-</span>
+                                    <span class="text-base font-bold text-gray-900">
+                                        {{ assessment.lab_fee ? formatCurrency(assessment.lab_fee) : '-' }}
+                                    </span>
                                 </div>
                                 <div class="flex justify-between py-3 border-b-2 border-gray-200 hover:bg-gray-100 px-3 rounded transition-colors">
                                     <span class="text-base font-semibold text-gray-800">Misc. Fee:</span>
-                                    <span class="text-base font-bold text-gray-900">-</span>
+                                    <span class="text-base font-bold text-gray-900">
+                                        {{ assessment.misc_fee ? formatCurrency(assessment.misc_fee) : '-' }}
+                                    </span>
                                 </div>
                                 <div class="flex justify-between py-5 font-black text-xl border-t-4 border-blue-600 mt-4 bg-gradient-to-r from-blue-50 to-indigo-50 px-4 rounded-lg">
                                     <span class="text-gray-900 uppercase tracking-wide">Total Assessment Fee:</span>

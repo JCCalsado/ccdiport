@@ -53,6 +53,9 @@ interface Props {
     yearLevels: string[];
     semesters: string[];
     schoolYears: string[];
+    
+    subjects?: Subject[];
+    fees?: Fee[];
 }
 
 const props = defineProps<Props>();

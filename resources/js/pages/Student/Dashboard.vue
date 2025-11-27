@@ -48,10 +48,10 @@ interface Notification {
 
 interface Props {
   account: Account
-  paymentTerms: PaymentTerm[]
-  notifications: Notification[]
-  recentTransactions: Transaction[]
-  stats: {
+  paymentTerms?: PaymentTerm[] // ✅ Make optional
+  notifications?: Notification[] // ✅ Make optional
+  recentTransactions?: Transaction[] // ✅ Make optional
+  stats?: {
     total_scheduled: number
     total_paid: number
     remaining_due: number
@@ -59,7 +59,17 @@ interface Props {
   }
 }
 
-const props = defineProps<Props>()
+const props = withDefaults(defineProps<Props>(), {
+  paymentTerms: () => [],
+  notifications: () => [],
+  recentTransactions: () => [],
+  stats: () => ({
+    total_scheduled: 0,
+    total_paid: 0,
+    remaining_due: 0,
+    upcoming_due_count: 0,
+  })
+})
 
 const { formatCurrency, formatDate, formatPercentage } = useFormatters()
 
@@ -121,13 +131,18 @@ const viewTransaction = (transaction: Transaction) => {
 }
 
 const handlePayNow = (transaction?: Transaction) => {
-  if (transaction) {
-    router.visit(route('student.account', {
-      tab: 'payment',
-      transaction_id: transaction.id,
-    }))
-  } else {
-    router.visit(route('student.account', { tab: 'payment' }))
+  try {
+    if (transaction) {
+      router.visit(route('student.account', {
+        tab: 'payment',
+        transaction_id: transaction.id,
+      }))
+    } else {
+      router.visit(route('student.account', { tab: 'payment' }))
+    }
+  } catch (error) {
+    console.error('Navigation failed:', error)
+    // Optionally show toast notification
   }
 }
 

@@ -200,18 +200,41 @@ class AssessmentDataService
     {
         if (!$assessment) return null;
 
+        // Check if using StudentPaymentTerm model
+        $user = User::find($assessment->user_id);
+        if ($user && $user->paymentTerms()->exists()) {
+            $terms = $user->paymentTerms()
+                ->where('school_year', $assessment->school_year)
+                ->where('semester', $assessment->semester)
+                ->orderBy('term_order')
+                ->get();
+
+            $formatted = [];
+            $termKeyMap = [
+                'Upon Registration' => 'upon_registration',
+                'Prelim' => 'prelim',
+                'Midterm' => 'midterm',
+                'Semi-Final' => 'semi_final',
+                'Final' => 'final',
+            ];
+
+            foreach ($terms as $term) {
+                $key = $termKeyMap[$term->term_name] ?? strtolower(str_replace([' ', '-'], '_', $term->term_name));
+                $formatted[$key] = (float) $term->amount;
+            }
+
+            return $formatted;
+        }
+
+        // Fallback to assessment payment_terms
         $terms = $assessment->payment_terms ?? [];
 
         return [
-            'upon_registration' => (float) ($terms['upon_registration'] ?? 
-                $assessment->upon_registration ?? 
-                $assessment->registration ?? 
-                $assessment->registration_fee ?? 
-                0),
-            'prelim' => (float) ($terms['prelim'] ?? $assessment->prelim ?? 0),
-            'midterm' => (float) ($terms['midterm'] ?? $assessment->midterm ?? 0),
-            'semi_final' => (float) ($terms['semi_final'] ?? $assessment->semi_final ?? 0),
-            'final' => (float) ($terms['final'] ?? $assessment->final ?? 0),
+            'upon_registration' => (float) ($terms['upon_registration'] ?? $assessment->registration_fee ?? 0),
+            'prelim' => (float) ($terms['prelim'] ?? 0),
+            'midterm' => (float) ($terms['midterm'] ?? 0),
+            'semi_final' => (float) ($terms['semi_final'] ?? 0),
+            'final' => (float) ($terms['final'] ?? 0),
         ];
     }
 

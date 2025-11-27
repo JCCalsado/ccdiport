@@ -287,6 +287,13 @@ class StudentFeeController extends Controller
             ->where('role', 'student')
             ->findOrFail($userId);
 
+        // Get latest assessment with curriculum relationship
+        $latestAssessment = StudentAssessment::where('user_id', $userId)
+            ->with(['curriculum.program']) // ← ADD THIS
+            ->where('status', 'active')
+            ->latest()
+            ->first();
+
         // ✅ Use AssessmentDataService for unified data structure
         $data = \App\Services\AssessmentDataService::getUnifiedAssessmentData($student);
 
@@ -703,6 +710,14 @@ class StudentFeeController extends Controller
             'auto_generate_assessment' => 'boolean',
         ]);
 
+        // ✅ ADD: Custom validation
+        if (!$validated['program_id'] && !$validated['course']) {
+            return back()->withErrors([
+                'program_id' => 'Either an OBE program or legacy course must be selected.',
+                'course' => 'Either an OBE program or legacy course must be selected.',
+            ])->withInput();
+        }
+
         DB::beginTransaction();
         try {
             $studentId = $validated['student_id'] ?: $this->generateUniqueStudentId();
@@ -792,38 +807,45 @@ class StudentFeeController extends Controller
 
     private function generateUniqueStudentId(): string
     {
-        $year = now()->year;
-        
-        return DB::transaction(function () use ($year) {
-        $lastStudent = User::where('student_id', 'like', "{$year}-%")
-            ->lockForUpdate() // ✅ This line is already there, good!
-            ->orderByRaw('CAST(SUBSTRING(student_id, 6) AS UNSIGNED) DESC')
-            ->first();
+        $maxRetries = 3;
+        $retryCount = 0;
 
-            if ($lastStudent) {
-                // Extract the number part and increment
-                $lastNumber = intval(substr($lastStudent->student_id, -4));
-                $newNumber = str_pad($lastNumber + 1, 4, '0', STR_PAD_LEFT);
-            } else {
-                $newNumber = '0001';
-            }
+        while ($retryCount < $maxRetries) {
+            try {
+                return DB::transaction(function () {
+                    $year = now()->year;
+                    
+                    // Lock the entire range for this year
+                    $lastStudent = User::where('student_id', 'like', "{$year}-%")
+                        ->lockForUpdate()
+                        ->orderByRaw('CAST(SUBSTRING(student_id, 6) AS UNSIGNED) DESC')
+                        ->first();
 
-            $newStudentId = "{$year}-{$newNumber}";
-            
-            // Double-check uniqueness
-            $attempts = 0;
-            while (User::where('student_id', $newStudentId)->exists() && $attempts < 10) {
-                $lastNumber = intval($newNumber);
-                $newNumber = str_pad($lastNumber + 1, 4, '0', STR_PAD_LEFT);
-                $newStudentId = "{$year}-{$newNumber}";
-                $attempts++;
+                    if ($lastStudent) {
+                        $lastNumber = intval(substr($lastStudent->student_id, -4));
+                        $newNumber = str_pad($lastNumber + 1, 4, '0', STR_PAD_LEFT);
+                    } else {
+                        $newNumber = '0001';
+                    }
+
+                    $newStudentId = "{$year}-{$newNumber}";
+                    
+                    // Final existence check within transaction
+                    if (User::where('student_id', $newStudentId)->exists()) {
+                        throw new \Exception('Student ID collision detected');
+                    }
+                    
+                    return $newStudentId;
+                });
+            } catch (\Exception $e) {
+                $retryCount++;
+                if ($retryCount >= $maxRetries) {
+                    throw new \Exception('Unable to generate unique student ID after ' . $maxRetries . ' attempts: ' . $e->getMessage());
+                }
+                usleep(100000); // Wait 100ms before retry
             }
-            
-            if ($attempts >= 10) {
-                throw new \Exception('Unable to generate unique student ID after multiple attempts.');
-            }
-            
-            return $newStudentId;
-        });
+        }
+
+        throw new \Exception('Failed to generate student ID');
     }
 }
