@@ -676,32 +676,21 @@ class StudentFeeController extends Controller
     {
         return DB::transaction(function () {
             $year = now()->year;
-            
+
+            // Get the last official student ID
             $lastStudent = User::where('student_id', 'like', "{$year}-%")
                 ->lockForUpdate()
                 ->orderByRaw('CAST(SUBSTRING(student_id, 6) AS UNSIGNED) DESC')
                 ->first();
 
-            $lastNumber = $lastStudent 
-                ? intval(substr($lastStudent->student_id, -4))
+            $lastNumber = $lastStudent
+                ? intval(substr($lastStudent->student_id, 5))
                 : 0;
-                
+
             $newNumber = str_pad($lastNumber + 1, 4, '0', STR_PAD_LEFT);
-            $newStudentId = "{$year}-{$newNumber}";
-            
-            // Create placeholder user **with required name fields** to avoid SQL errors
-            $placeholder = User::create([
-                'student_id' => $newStudentId,
-                'email' => "placeholder_{$newStudentId}@temp.com",
-                'password' => Hash::make(Str::random(32)),
-                'role' => 'student',
-                'status' => User::STATUS_ACTIVE,
-                // ensure required fields exist so database constraints don't fail
-                'last_name' => 'TBD',
-                'first_name' => 'TBD',
-            ]);
-            
-            return $newStudentId;
+
+            // **Return the ID ONLY — do NOT create any placeholder users**
+            return "{$year}-{$newNumber}";
         });
     }
 

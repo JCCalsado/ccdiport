@@ -26,66 +26,55 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::get('/dashboard', [DashboardController::class, 'index'])->name('dashboard');
 });
 
-Route::middleware(['auth', 'verified', 'role:student'])->group(function () {
-    Route::get('/student/profile', [StudentController::class, 'profile'])->name('student.profile');
-});
-
 // Student-specific routes
 Route::middleware(['auth', 'verified', 'role:student'])->prefix('student')->group(function () {
     Route::get('/dashboard', [StudentDashboardController::class, 'index'])->name('student.dashboard');
     Route::get('/account', [StudentAccountController::class, 'index'])->name('student.account');
+    Route::get('/profile', [StudentController::class, 'profile'])->name('student.profile');
     Route::get('/payment', [PaymentController::class, 'create'])->name('payment.create');
 });
 
 // Student Archive routes (for admin/accounting)
+// REMOVE CREATE + STORE — student creation now uses Student Fee
 Route::middleware(['auth', 'verified', 'role:admin,accounting'])->group(function () {
-    Route::resource('students', StudentController::class);
+    Route::resource('students', StudentController::class)->except(['create', 'store']);
     Route::post('students/{student}/payments', [StudentController::class, 'storePayment'])->name('students.payments.store');
 });
 
-// Student Fee Management routes
+// Student Fee Management routes — THIS IS THE REAL CREATE FLOW
 Route::middleware(['auth', 'verified', 'role:admin,accounting'])->prefix('student-fees')->group(function () {
     Route::get('/', [StudentFeeController::class, 'index'])->name('student-fees.index');
-    
-    // Create new student (separate from assessment)
+
     Route::get('/create-student', [StudentFeeController::class, 'createStudent'])->name('student-fees.create-student');
     Route::post('/store-student', [StudentFeeController::class, 'storeStudent'])->name('student-fees.store-student');
-    
-    // Create assessment
+
     Route::get('/create', [StudentFeeController::class, 'create'])->name('student-fees.create');
     Route::post('/', [StudentFeeController::class, 'store'])->name('student-fees.store');
-    
-    // View and manage specific student
+
     Route::get('/{user}', [StudentFeeController::class, 'show'])->name('student-fees.show');
     Route::get('/{user}/edit', [StudentFeeController::class, 'edit'])->name('student-fees.edit');
     Route::put('/{user}', [StudentFeeController::class, 'update'])->name('student-fees.update');
-    
-    // Payment for student
+
     Route::post('/{user}/payments', [StudentFeeController::class, 'storePayment'])->name('student-fees.payments.store');
-    
-    // Export PDF
+
     Route::get('/{user}/export-pdf', [StudentFeeController::class, 'exportPdf'])->name('student-fees.export-pdf');
 
-    // OBE Curriculum routes
     Route::get('/curriculum/terms/{program}', [StudentFeeController::class, 'getAvailableTerms'])
         ->name('student-fees.curriculum.terms');
     Route::post('/curriculum/preview', [StudentFeeController::class, 'getCurriculumPreview'])
         ->name('student-fees.curriculum.preview');
 });
 
-// Curriculum Management routes (admin/accounting only)
+// Curriculum Management
 Route::middleware(['auth', 'verified', 'role:admin,accounting'])->group(function () {
-    // Use resource controller (this creates all CRUD routes)
     Route::resource('curricula', CurriculaController::class);
-    
-    // Additional custom routes
     Route::post('curricula/{curriculum}/toggle-status', [CurriculaController::class, 'toggleStatus'])
         ->name('curricula.toggleStatus');
     Route::get('curricula/ajax/courses', [CurriculaController::class, 'getCourses'])
         ->name('curricula.get-courses');
 });
 
-// Transaction routes
+// Transactions
 Route::middleware(['auth', 'verified'])->group(function () {
     Route::get('/transactions', [TransactionController::class, 'index'])->name('transactions.index');
     Route::get('/transactions/download', [TransactionController::class, 'download'])->name('transactions.download');
@@ -110,31 +99,31 @@ Route::middleware(['auth', 'verified', 'role:accounting,admin'])->prefix('accoun
     Route::get('/transactions', [TransactionController::class, 'index'])->name('accounting.transactions.index');
 });
 
-// Fee Management routes
+// Fee management
 Route::middleware(['auth', 'verified', 'role:admin,accounting'])->group(function () {
     Route::resource('fees', FeeController::class);
     Route::post('fees/{fee}/toggle-status', [FeeController::class, 'toggleStatus'])->name('fees.toggleStatus');
     Route::post('fees/assign-to-students', [FeeController::class, 'assignToStudents'])->name('fees.assignToStudents');
 });
 
-// Subject Management routes
+// Subject management
 Route::middleware(['auth', 'verified', 'role:admin,accounting'])->group(function () {
     Route::resource('subjects', SubjectController::class);
     Route::post('subjects/{subject}/enroll-students', [SubjectController::class, 'enrollStudents'])->name('subjects.enrollStudents');
 });
 
-// User Management routes (admin only)
+// User management
 Route::middleware(['auth', 'verified', 'role:admin'])->group(function () {
     Route::resource('users', UserController::class);
 });
 
-// Notification routes
+// Notifications
 Route::middleware(['auth', 'verified', 'role:admin,accounting'])->group(function () {
     Route::get('/notifications', [NotificationController::class, 'index'])->name('notifications.index');
     Route::post('/notifications', [NotificationController::class, 'store'])->name('notifications.store');
 });
 
-// Settings routes
+// Settings
 Route::middleware('auth')->prefix('settings')->name('profile.')->group(function () {
     Route::delete('profile', [\App\Http\Controllers\Settings\ProfileController::class, 'destroy'])->name('destroy');
     Route::get('profile', [\App\Http\Controllers\Settings\ProfileController::class, 'edit'])->name('edit');
@@ -148,10 +137,10 @@ Route::middleware('auth')->prefix('settings')->name('password.')->group(function
     Route::put('password', [\App\Http\Controllers\Settings\PasswordController::class, 'update'])->name('update');
 });
 
+// Misc
 Route::middleware(['auth', 'verified'])->prefix('settings')->group(function () {
     Route::get('appearance', fn () => Inertia::render('settings/Appearance'))->name('appearance');
-    
-    // Admin-only settings
+
     Route::middleware('role:admin')->group(function () {
         Route::get('system', fn () => Inertia::render('settings/System'))->name('settings.system');
     });
