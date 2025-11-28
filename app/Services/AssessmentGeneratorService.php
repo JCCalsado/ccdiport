@@ -143,7 +143,7 @@ class AssessmentGeneratorService
     }
 
     /**
-     * ✅ FIX: Create StudentPaymentTerm records - FIXED CARBON PARSE
+     * ✅ FIX: Create StudentPaymentTerm records
      */
     protected function createPaymentTerms(User $student, Curriculum $curriculum, array $paymentTerms): void
     {
@@ -157,7 +157,7 @@ class AssessmentGeneratorService
 
         $order = 1;
         
-        // ✅ FIX: Extract year from "2025-2026" format
+        // ✅ FIX: Extract year from "2025-2026" format properly
         $yearParts = explode('-', $curriculum->school_year);
         $startYear = (int) $yearParts[0]; // 2025
         $startDate = Carbon::create($startYear, 8, 1); // August 1, 2025
@@ -190,7 +190,7 @@ class AssessmentGeneratorService
     }
 
     /**
-     * ✅ FIX: Get curriculum preview data - COMPLETE STRUCTURE
+     * ✅ FIX: Get curriculum preview with ALL required fields
      */
     public function getCurriculumPreview(int $programId, string $yearLevel, string $semester, string $schoolYear): ?array
     {

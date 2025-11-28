@@ -580,22 +580,22 @@ class StudentFeeController extends Controller
             'year_level' => 'required|string|in:1st Year,2nd Year,3rd Year,4th Year',
             'student_id' => 'nullable|string|unique:users,student_id',
             
-            // OBE Mode - Make required_with rules explicit
+            // ✅ FIX: Conditional validation
             'program_id' => 'nullable|exists:programs,id',
-            'semester' => 'required_with:program_id|string|in:1st Sem,2nd Sem,Summer',
-            'school_year' => 'required_with:program_id|string|regex:/^\d{4}-\d{4}$/',
-            
-            // Legacy Mode
-            'course' => 'required_without:program_id|string',
+            'semester' => 'nullable|string|in:1st Sem,2nd Sem,Summer',
+            'school_year' => 'nullable|string|regex:/^\d{4}-\d{4}$/',
+            'course' => 'nullable|string|max:255',
             
             // Options
             'auto_generate_assessment' => 'boolean',
-        ], [
-            'semester.required_with' => 'Semester is required when selecting an OBE program.',
-            'school_year.required_with' => 'School year is required when selecting an OBE program.',
-            'school_year.regex' => 'School year must be in format: 2025-2026',
-            'course.required_without' => 'Either an OBE program or legacy course must be selected.',
         ]);
+
+        // ✅ FIX: Custom validation
+        if (!$validated['program_id'] && !$validated['course']) {
+            return back()->withErrors([
+                'error' => 'Either an OBE program or legacy course must be selected.',
+            ])->withInput();
+        }
 
         DB::beginTransaction();
         try {
