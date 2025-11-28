@@ -112,4 +112,41 @@ class User extends Authenticatable
             'profile_picture' => 'nullable|image|mimes:jpeg,png,jpg,gif|max:2048',
         ];
     }
+
+    /**
+     * Get all assessments for this student
+     */
+    public function assessments(): HasMany
+    {
+        return $this->hasMany(StudentAssessment::class);
+    }
+
+    /**
+     * Get active assessment
+     */
+    public function activeAssessment(): HasOne
+    {
+    return $this->hasOne(StudentAssessment::class)
+        ->where('status', 'active')
+        ->latest();
+    }
+
+    /**
+     * Get role value (handles both string and enum)
+     */
+    public function getRoleValueAttribute(): string
+    {
+        return is_object($this->role) ? $this->role->value : (string) $this->role;
+    }
+
+    /**
+     * Check if user has specific role
+     */
+    public function hasRole(string|array $roles): bool
+    {
+        if (is_array($roles)) {
+            return in_array($this->role_value, $roles);
+        }
+        return $this->role_value === $roles;
+    }
 }

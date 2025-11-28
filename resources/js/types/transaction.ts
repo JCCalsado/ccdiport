@@ -47,21 +47,21 @@ export interface TransactionUser {
 }
 
 export interface Transaction {
-  id: number
-  reference: string
-  user?: TransactionUser
-  kind: TransactionKind
-  type: TransactionCategory
-  year?: string
-  semester?: string
-  amount: number
-  status: TransactionStatus
-  payment_channel?: PaymentMethod
-  paid_at?: string
-  created_at: string
-  updated_at?: string
-  fee?: Fee
-  meta?: TransactionMeta
+  id: number;
+  reference: string;
+  kind: TransactionKind;
+  type: TransactionCategory;
+  year?: string; // ✅ Add
+  semester?: string; // ✅ Add
+  amount: number;
+  status: TransactionStatus;
+  payment_channel?: PaymentMethod;
+  paid_at?: string;
+  created_at: string;
+  updated_at?: string;
+  fee?: Fee;
+  meta?: TransactionMeta;
+  user?: TransactionUser;
 }
 
 export interface Account {

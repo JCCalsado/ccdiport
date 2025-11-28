@@ -53,7 +53,7 @@ class ProfileUpdateRequest extends FormRequest
         }
 
         // Add faculty field for accounting/admin users
-        if (in_array($user->role, ['accounting', 'admin'])) {
+        if ($user->hasRole(['admin', 'accounting'])) {
             $rules['faculty'] = ['nullable', 'string', 'max:255'];
         }
 

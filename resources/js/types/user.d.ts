@@ -1,4 +1,6 @@
 // Base User type
+// resources/js/types/user.d.ts
+
 export interface User {
   id: number;
   name: string;
@@ -10,9 +12,38 @@ export interface User {
   created_at?: string;
   updated_at?: string;
   
-  // ✅ ADD THESE MISSING FIELDS
-  paymentTerms?: PaymentTerm[]; // NEW
-  account?: Account; // NEW (referenced but not typed)
+  // ✅ Add missing fields
+  student_id?: string;
+  course?: string;
+  year_level?: string;
+  faculty?: string;
+  status?: 'active' | 'graduated' | 'dropped';
+  birthday?: string;
+  phone?: string;
+  address?: string;
+  
+  // Relationships
+  paymentTerms?: PaymentTerm[];
+  account?: Account;
+  student?: StudentProfile; // ✅ Add this
+}
+
+// ✅ Add StudentProfile interface
+export interface StudentProfile {
+  id: number;
+  user_id: number;
+  student_id: string;
+  last_name: string;
+  first_name: string;
+  middle_initial?: string;
+  email: string;
+  course: string;
+  year_level: string;
+  status: 'enrolled' | 'graduated' | 'inactive';
+  total_balance: number;
+  birthday?: string;
+  phone?: string;
+  address?: string;
 }
 
 // ✅ ADD NEW INTERFACE

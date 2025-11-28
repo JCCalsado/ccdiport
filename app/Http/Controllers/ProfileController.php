@@ -65,7 +65,7 @@ class ProfileController extends Controller
         }
 
         // Add faculty field for accounting/admin users
-        if (in_array($user->role, ['accounting', 'admin'])) {
+        if ($user->hasRole(['admin', 'accounting'])) {
             $rules['faculty'] = ['nullable', 'string', 'max:255'];
         }
 
@@ -100,7 +100,7 @@ class ProfileController extends Controller
         }
 
         // Add faculty for accounting/admin
-        if (in_array($user->role, ['accounting', 'admin'])) {
+        if ($user->hasRole(['admin', 'accounting'])) {
             $userUpdateData['faculty'] = $data['faculty'] ?? $user->faculty;
         }
 

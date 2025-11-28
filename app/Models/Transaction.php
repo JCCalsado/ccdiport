@@ -38,7 +38,15 @@ class Transaction extends Model
     protected static function booted()
     {
         static::saved(function ($transaction) {
-            AccountService::recalculate($transaction->user);
+            // ✅ Only recalculate if amount or status changed
+            if ($transaction->wasChanged(['amount', 'status', 'kind'])) {
+                // ✅ Defer recalculation to end of request
+                app()->terminating(function () use ($transaction) {
+                    if ($transaction->user) {
+                        AccountService::recalculate($transaction->user);
+                    }
+                });
+            }
         });
     }
 

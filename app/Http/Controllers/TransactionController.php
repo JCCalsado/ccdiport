@@ -17,23 +17,20 @@ class TransactionController extends Controller
     public function index(Request $request)
     {
         $user = $request->user();
-
-        // Role is a STRING, not an enum
-        $adminRoles = ['super_admin', 'admin', 'accounting'];
-
-        if (in_array($user->role, $adminRoles)) {
-            // Admin/accounting: all transactions
+    
+        // ✅ Get role value (handles both string and enum)
+        $roleValue = is_object($user->role) ? $user->role->value : $user->role;
+        $adminRoles = ['admin', 'accounting']; // Remove 'super_admin' - doesn't exist
+        
+        if (in_array($roleValue, $adminRoles)) {
             $transactions = Transaction::with('user')
-                ->orderByDesc('year')
-                ->orderBy('semester')
+                ->orderByDesc('created_at')
                 ->get()
                 ->groupBy(fn($txn) => "{$txn->year} {$txn->semester}");
         } else {
-            // Students: only their own
             $transactions = $user->transactions()
                 ->with('user')
-                ->orderByDesc('year')
-                ->orderBy('semester')
+                ->orderByDesc('created_at')
                 ->get()
                 ->groupBy(fn($txn) => "{$txn->year} {$txn->semester}");
         }
@@ -114,11 +111,25 @@ class TransactionController extends Controller
         $data = $request->validate([
             'amount' => 'required|numeric|min:0.01',
             'payment_method' => 'required|string',
+            'paid_at' => 'nullable|date',
             'reference_number' => 'nullable|string',
-            'paid_at' => 'required|date',
-            'description' => 'required|string',
-            'term_id' => 'nullable|exists:student_payment_terms,id', // Optional: specify which term
+            'description' => 'nullable|string',
+            'term_id' => 'nullable|exists:student_payment_terms,id',
         ]);
+
+        // Preview updates to payment terms (actual persistence happens inside DB transaction below)
+        if (isset($data['term_id'])) {
+            $term = StudentPaymentTerm::findOrFail($data['term_id']);
+            $term->paid_amount += $data['amount'];
+            // ✅ This part works (preview)
+        } else {
+            // Prepare earliest unpaid terms for allocation (actual updates happen inside transaction)
+            $terms = StudentPaymentTerm::where('user_id', $user->id)
+                ->unpaid()
+                ->orderBy('term_order')
+                ->get();
+            // Updates terms will be applied in the transactional block below
+        }
 
         DB::beginTransaction();
         try {

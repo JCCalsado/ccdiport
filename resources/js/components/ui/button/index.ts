@@ -1,5 +1,5 @@
 import { cva, type VariantProps } from 'class-variance-authority'
-
+import { Badge } from '@/components/ui/badge'
 export { default as Button } from './Button.vue';
 
 export const buttonVariants = cva(

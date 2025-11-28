@@ -16,7 +16,6 @@ use App\Http\Controllers\AdminDashboardController;
 use App\Http\Controllers\NotificationController;
 use Illuminate\Support\Facades\Route;
 use Inertia\Inertia;
-use App\Http\Controllers\CurriculumController;
 use App\Http\Controllers\CurriculaController;
 
 Route::get('/', function () {
@@ -79,9 +78,6 @@ Route::middleware(['auth', 'verified', 'role:admin,accounting'])->group(function
     // Additional custom routes
     Route::post('curricula/{curriculum}/toggle-status', [CurriculaController::class, 'toggleStatus'])
         ->name('curricula.toggleStatus');
-    Route::get('curricula/ajax/courses', [CurriculaController::class, 'getCourses'])
-        ->name('curricula.get-courses');
-
     Route::get('curricula/ajax/courses', [CurriculaController::class, 'getCourses'])
         ->name('curricula.get-courses');
 });

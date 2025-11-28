@@ -151,47 +151,26 @@ class AssessmentDataService
         }
 
         return collect($assessment->subjects)->map(function ($subject) {
-            // Map all possible field names
-            $code = $subject['subject_code'] ?? $subject['code'] ?? $subject['course_code'] ?? '';
-            $description = $subject['description'] ?? $subject['title'] ?? $subject['name'] ?? '';
-            $units = (int) ($subject['units'] ?? $subject['total_units'] ?? 0);
-            $lecUnits = (int) ($subject['lec_units'] ?? 0);
-            $labUnits = (int) ($subject['lab_units'] ?? 0);
+            // Extract from any possible field name
+            $code = $subject['code'] ?? $subject['subject_code'] ?? $subject['course_code'] ?? '';
+            $title = $subject['title'] ?? $subject['name'] ?? $subject['description'] ?? '';
+            $units = (int) ($subject['total_units'] ?? $subject['units'] ?? 0);
             
-            // Calculate fees
-            $tuition = (float) ($subject['tuition'] ?? 0);
-            $labFee = (float) ($subject['lab_fee'] ?? 0);
-            $miscFee = (float) ($subject['misc_fee'] ?? 0);
-            $total = (float) ($subject['total'] ?? ($tuition + $labFee + $miscFee));
-
+            // ✅ Return SINGLE canonical structure
             return [
-                // Code fields (all variations)
-                'subject_code' => $code,
                 'code' => $code,
-                'course_code' => $code,
-                
-                // Description fields (all variations)
-                'description' => $description,
-                'title' => $description,
-                'name' => $description,
-                'subject_name' => $description,
-                
-                // Unit fields
-                'units' => $units,
+                'title' => $title,
+                'lec_units' => (int) ($subject['lec_units'] ?? 0),
+                'lab_units' => (int) ($subject['lab_units'] ?? 0),
                 'total_units' => $units,
-                'lec_units' => $lecUnits,
-                'lab_units' => $labUnits,
-                
-                // Fee fields
-                'tuition' => $tuition,
-                'lab_fee' => $labFee,
-                'misc_fee' => $miscFee,
-                'total' => $total,
-                
-                // Schedule fields (with fallbacks)
-                'time' => $subject['time'] ?? $subject['schedule_time'] ?? '08:00 AM - 10:00 AM',
-                'day' => $subject['day'] ?? $subject['schedule_day'] ?? 'MTWTHF',
-                'semester' => $subject['semester'] ?? null,
+                'tuition' => (float) ($subject['tuition'] ?? 0),
+                'lab_fee' => (float) ($subject['lab_fee'] ?? 0),
+                'misc_fee' => (float) ($subject['misc_fee'] ?? 0),
+                'total' => (float) ($subject['total'] ?? 0),
+                'schedule' => [
+                    'time' => $subject['time'] ?? $subject['schedule_time'] ?? 'TBA',
+                    'day' => $subject['day'] ?? $subject['schedule_day'] ?? 'TBA',
+                ],
             ];
         })->values()->toArray();
     }
