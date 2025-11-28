@@ -94,6 +94,9 @@ const fetchCurriculumPreview = async () => {
     } catch (error: any) {
         console.error('Failed to fetch curriculum preview:', error);
         curriculumPreview.value = null;
+    } finally {
+        isLoadingPreview.value = false;
+    }
 };
 
 // Watch for program changes
