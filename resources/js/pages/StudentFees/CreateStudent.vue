@@ -5,9 +5,9 @@ import { Head, Link, useForm } from '@inertiajs/vue3';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Alert, AlertDescription } from '@/components/ui/alert';
-import { ArrowLeft, User, Phone, GraduationCap, AlertCircle, CheckCircle } from 'lucide-vue-next';
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import { ArrowLeft, User, Phone, GraduationCap, AlertCircle, CheckCircle, Loader2, Info } from 'lucide-vue-next';
 import { ref, computed, watch } from 'vue';
 import axios from 'axios';
 
@@ -17,6 +17,29 @@ interface Program {
     name: string;
     full_name: string;
     major?: string;
+}
+
+interface Course {
+    code: string;
+    title: string;
+    total_units: number;
+    lec_units: number;
+    lab_units: number;
+    has_lab: boolean;
+}
+
+interface CurriculumPreview {
+    id: number;
+    program: string;
+    term: string;
+    courses: Course[];
+    totals: {
+        tuition: number;
+        lab_fees: number;
+        registration_fee: number;
+        misc_fee: number;
+        total_assessment: number;
+    };
 }
 
 interface Props {
@@ -58,30 +81,51 @@ const form = useForm({
     
     // Options
     auto_generate_assessment: true,
-    student_id: '', // Optional - will be auto-generated if empty
+    student_id: '',
 });
 
-// State for curriculum preview
 const curriculumPreview = ref<any>(null);
 const isLoadingPreview = ref(false);
+const previewError = ref<string | null>(null);
 const useOBECurriculum = ref(true);
 
-// Computed: total units from curriculum
+// Computed properties
 const totalUnits = computed(() => {
     if (!curriculumPreview.value?.courses) return 0;
-    return curriculumPreview.value.courses.reduce((sum: number, course: any) => 
+    return curriculumPreview.value.courses.reduce((sum, course) => 
         sum + (course.total_units || 0), 0
     );
 });
 
-// Fetch curriculum preview when program/term changes
+const canAutoGenerateAssessment = computed(() => {
+    return useOBECurriculum.value && 
+           form.program_id !== null && 
+           form.year_level !== '' &&
+           curriculumPreview.value !== null;
+});
+
+const isFormValid = computed(() => {
+    const basicInfoValid = form.last_name && form.first_name && form.email && 
+                          form.birthday && form.phone && form.address && form.year_level;
+    
+    if (useOBECurriculum.value) {
+        return basicInfoValid && form.program_id !== null;
+    } else {
+        return basicInfoValid && form.course !== '';
+    }
+});
+
+// Curriculum preview fetcher
 const fetchCurriculumPreview = async () => {
     if (!form.program_id || !form.year_level || !form.semester || !form.school_year) {
         curriculumPreview.value = null;
+        previewError.value = null;
         return;
     }
 
     isLoadingPreview.value = true;
+    previewError.value = null;
+    
     try {
         const response = await axios.post(route('student-fees.curriculum.preview'), {
             program_id: form.program_id,
@@ -91,40 +135,55 @@ const fetchCurriculumPreview = async () => {
         });
         
         curriculumPreview.value = response.data.curriculum;
+        
+        if (!curriculumPreview.value) {
+            previewError.value = 'No curriculum found for the selected term.';
+        }
     } catch (error: any) {
         console.error('Failed to fetch curriculum preview:', error);
+        previewError.value = error.response?.data?.message || 'Failed to load curriculum preview';
         curriculumPreview.value = null;
     } finally {
         isLoadingPreview.value = false;
     }
 };
 
-// Watch for program changes
+// Watchers
 watch(() => form.program_id, (newVal) => {
     if (newVal) {
         useOBECurriculum.value = true;
-        form.course = ''; // Clear legacy course
+        form.course = '';
+        form.auto_generate_assessment = true;
         fetchCurriculumPreview();
+    } else {
+        curriculumPreview.value = null;
+        previewError.value = null;
     }
 });
 
-// Watch for term changes
 watch([() => form.year_level, () => form.semester, () => form.school_year], () => {
-    if (form.program_id) {
+    if (form.program_id && useOBECurriculum.value) {
         fetchCurriculumPreview();
     }
 });
 
-// Toggle between OBE and Legacy
+watch(() => useOBECurriculum.value, (newVal) => {
+    if (newVal) {
+        form.course = '';
+        if (form.program_id) {
+            fetchCurriculumPreview();
+        }
+    } else {
+        form.program_id = null;
+        form.auto_generate_assessment = false;
+        curriculumPreview.value = null;
+        previewError.value = null;
+    }
+});
+
+// Methods
 const toggleCurriculumMode = () => {
     useOBECurriculum.value = !useOBECurriculum.value;
-    if (!useOBECurriculum.value) {
-        form.program_id = null;
-        curriculumPreview.value = null;
-        form.auto_generate_assessment = false;
-    } else {
-        form.course = '';
-    }
 };
 
 const formatCurrency = (amount: number) => {
@@ -134,11 +193,43 @@ const formatCurrency = (amount: number) => {
     }).format(amount);
 };
 
+const validateForm = (): boolean => {
+    if (useOBECurriculum.value) {
+        if (!form.program_id) {
+            alert('Please select an OBE program');
+            return false;
+        }
+        if (!form.semester || !form.school_year) {
+            alert('Semester and School Year are required for OBE students');
+            return false;
+        }
+    } else {
+        if (!form.course) {
+            alert('Please select a legacy course');
+            return false;
+        }
+    }
+    
+    if (!form.year_level) {
+        alert('Year level is required');
+        return false;
+    }
+    
+    return true;
+};
+
 const submit = () => {
+    if (!validateForm()) {
+        return;
+    }
+    
     form.post(route('student-fees.store-student'), {
         preserveScroll: true,
         onSuccess: () => {
             form.reset();
+        },
+        onError: (errors) => {
+            console.error('Form submission errors:', errors);
         },
     });
 };
@@ -172,6 +263,7 @@ const submit = () => {
             <!-- Global Error Alert -->
             <Alert v-if="form.errors.error" variant="destructive">
                 <AlertCircle class="h-4 w-4" />
+                <AlertTitle>Error</AlertTitle>
                 <AlertDescription>{{ form.errors.error }}</AlertDescription>
             </Alert>
 
@@ -183,6 +275,7 @@ const submit = () => {
                             <User class="w-5 h-5" />
                             Personal Information
                         </CardTitle>
+                        <CardDescription>Basic information about the student</CardDescription>
                     </CardHeader>
                     <CardContent class="space-y-4">
                         <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -257,6 +350,7 @@ const submit = () => {
                                     v-model="form.birthday"
                                     type="date"
                                     required
+                                    :max="new Date().toISOString().split('T')[0]"
                                     :class="{ 'border-red-500': form.errors.birthday }"
                                 />
                                 <p v-if="form.errors.birthday" class="text-sm text-red-500">
@@ -274,6 +368,7 @@ const submit = () => {
                             <Phone class="w-5 h-5" />
                             Contact Information
                         </CardTitle>
+                        <CardDescription>How to reach the student</CardDescription>
                     </CardHeader>
                     <CardContent class="space-y-4">
                         <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -324,19 +419,23 @@ const submit = () => {
                                 size="sm"
                                 @click="toggleCurriculumMode"
                             >
-                                {{ useOBECurriculum ? 'Switch to Irregular Student Mode' : 'Switch to Regular (OBE) Student Mode' }}
+                                {{ useOBECurriculum ? 'Switch to Irregular Student' : 'Switch to Regular (OBE) Student' }}
                             </Button>
                         </CardTitle>
+                        <CardDescription>
+                            {{ useOBECurriculum ? 'OBE Curriculum-based enrollment with automatic assessment generation' : 'Manual course selection for irregular students' }}
+                        </CardDescription>
                     </CardHeader>
                     <CardContent class="space-y-4">
                         <!-- OBE Curriculum Mode -->
                         <div v-if="useOBECurriculum" class="space-y-4">
                             <!-- Program Selection -->
                             <div class="space-y-2">
-                                <Label for="program_id">Program (OBE Curriculum)</Label>
+                                <Label for="program_id" required>Program (OBE Curriculum)</Label>
                                 <select
                                     id="program_id"
                                     v-model="form.program_id"
+                                    required
                                     class="w-full px-3 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                                     :class="{ 'border-red-500': form.errors.program_id }"
                                 >
@@ -373,10 +472,11 @@ const submit = () => {
 
                                 <!-- Semester -->
                                 <div class="space-y-2">
-                                    <Label for="semester">Semester</Label>
+                                    <Label for="semester" required>Semester</Label>
                                     <select
                                         id="semester"
                                         v-model="form.semester"
+                                        required
                                         class="w-full px-3 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                                     >
                                         <option v-for="sem in semesters" :key="sem" :value="sem">
@@ -387,10 +487,11 @@ const submit = () => {
 
                                 <!-- School Year -->
                                 <div class="space-y-2">
-                                    <Label for="school_year">School Year</Label>
+                                    <Label for="school_year" required>School Year</Label>
                                     <select
                                         id="school_year"
                                         v-model="form.school_year"
+                                        required
                                         class="w-full px-3 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                                     >
                                         <option v-for="sy in schoolYears" :key="sy" :value="sy">
@@ -407,21 +508,28 @@ const submit = () => {
                                     v-model="form.auto_generate_assessment"
                                     type="checkbox"
                                     class="rounded"
-                                    :disabled="!form.program_id"
+                                    :disabled="!canAutoGenerateAssessment"
                                 />
                                 <Label for="auto_generate" class="cursor-pointer">
-                                    Automatically generate assessment from OBE curriculum
+                                    <span class="font-medium">Automatically generate assessment from OBE curriculum</span>
+                                    <p class="text-sm text-gray-600 mt-1">
+                                        {{ canAutoGenerateAssessment 
+                                            ? 'Assessment will be generated based on the curriculum preview below' 
+                                            : 'Select all required fields to enable automatic assessment generation' 
+                                        }}
+                                    </p>
                                 </Label>
                             </div>
 
-                            <!-- Curriculum Preview -->
+                            <!-- Curriculum Preview Loading -->
                             <div v-if="isLoadingPreview" class="p-4 bg-gray-50 rounded-lg border">
                                 <div class="flex items-center justify-center gap-2">
-                                    <div class="animate-spin rounded-full h-5 w-5 border-b-2 border-blue-600"></div>
+                                    <Loader2 class="h-5 w-5 animate-spin text-blue-600" />
                                     <p class="text-gray-600">Loading curriculum preview...</p>
                                 </div>
                             </div>
 
+                            <!-- Curriculum Preview Success -->
                             <div v-else-if="curriculumPreview" class="p-4 bg-green-50 rounded-lg border border-green-200">
                                 <div class="flex items-start gap-2 mb-3">
                                     <CheckCircle class="w-5 h-5 text-green-600 mt-0.5" />
@@ -441,13 +549,13 @@ const submit = () => {
                                             <p class="font-medium">{{ totalUnits }}</p>
                                         </div>
                                     </div>
-                                    <div class="grid grid-cols-2 md:grid-cols-4 gap-4 pt-2 mt-2 border-t">
+                                    <div class="grid grid-cols-2 md:grid-cols-5 gap-4 pt-2 mt-2 border-t">
                                         <div>
-                                            <p class="text-gray-600">Tuition Fee:</p>
+                                            <p class="text-gray-600">Tuition:</p>
                                             <p class="font-medium">{{ formatCurrency(curriculumPreview.totals.tuition) }}</p>
                                         </div>
                                         <div>
-                                            <p class="text-gray-600">Lab Fees:</p>
+                                            <p class="text-gray-600">Lab:</p>
                                             <p class="font-medium">{{ formatCurrency(curriculumPreview.totals.lab_fees) }}</p>
                                         </div>
                                         <div>
@@ -455,22 +563,31 @@ const submit = () => {
                                             <p class="font-medium">{{ formatCurrency(curriculumPreview.totals.registration_fee) }}</p>
                                         </div>
                                         <div>
-                                            <p class="text-gray-600">Misc Fee:</p>
+                                            <p class="text-gray-600">Misc:</p>
                                             <p class="font-medium">{{ formatCurrency(curriculumPreview.totals.misc_fee) }}</p>
                                         </div>
-                                    </div>
-                                    <div class="pt-2 mt-2 border-t">
-                                        <p class="text-lg font-bold text-green-700">
-                                            Total Assessment: {{ formatCurrency(curriculumPreview.totals.total_assessment) }}
-                                        </p>
+                                        <div>
+                                            <p class="text-gray-600 font-semibold">Total:</p>
+                                            <p class="font-bold text-green-700">{{ formatCurrency(curriculumPreview.totals.total_assessment) }}</p>
+                                        </div>
                                     </div>
                                 </div>
                             </div>
 
-                            <Alert v-else-if="form.program_id && form.year_level" variant="warning">
+                            <!-- Curriculum Preview Error -->
+                            <Alert v-if="previewError && useOBECurriculum" variant="warning">
                                 <AlertCircle class="h-4 w-4" />
                                 <AlertDescription>
-                                    No curriculum found for the selected term. The student will be created without an initial assessment.
+                                    {{ previewError }}
+                                    <br><small>The student will be created without an initial assessment.</small>
+                                </AlertDescription>
+                            </Alert>
+
+                            <!-- No Preview Yet -->
+                            <Alert v-else-if="form.program_id && form.year_level">
+                                <Info class="h-4 w-4" />
+                                <AlertDescription>
+                                    Select all academic details to preview the curriculum and fees.
                                 </AlertDescription>
                             </Alert>
                         </div>
@@ -480,10 +597,11 @@ const submit = () => {
                             <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                                 <!-- Legacy Course -->
                                 <div class="space-y-2">
-                                    <Label for="course">Course (Legacy)</Label>
+                                    <Label for="course" required>Course (Legacy)</Label>
                                     <select
                                         id="course"
                                         v-model="form.course"
+                                        required
                                         class="w-full px-3 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                                         :class="{ 'border-red-500': form.errors.course }"
                                     >
@@ -520,8 +638,9 @@ const submit = () => {
 
                             <Alert>
                                 <AlertCircle class="h-4 w-4" />
+                                <AlertTitle>Manual Assessment Required</AlertTitle>
                                 <AlertDescription>
-                                    Legacy course mode: You'll need to manually create the student's assessment after registration.
+                                    For irregular students, you'll need to manually create the assessment after registration by selecting individual subjects and fees.
                                 </AlertDescription>
                             </Alert>
                         </div>
@@ -530,10 +649,11 @@ const submit = () => {
 
                 <!-- Password Information Alert -->
                 <Alert>
-                    <AlertCircle class="h-4 w-4" />
+                    <Info class="h-4 w-4" />
+                    <AlertTitle>Default Login Credentials</AlertTitle>
                     <AlertDescription>
-                        <strong>Default Password:</strong> The student's initial password will be set to <code class="px-1 py-0.5 bg-gray-100 rounded">password</code>. 
-                        They should change it after their first login.
+                        The student's initial password will be set to <code class="px-2 py-0.5 bg-gray-100 rounded font-mono">password</code>. 
+                        They should change it after their first login for security.
                     </AlertDescription>
                 </Alert>
 
@@ -546,9 +666,10 @@ const submit = () => {
                     </Link>
                     <Button 
                         type="submit" 
-                        :disabled="form.processing"
+                        :disabled="form.processing || !isFormValid"
                         class="min-w-[200px]"
                     >
+                        <Loader2 v-if="form.processing" class="mr-2 h-4 w-4 animate-spin" />
                         <span v-if="form.processing">Adding Student...</span>
                         <span v-else>Add Student</span>
                     </Button>

@@ -563,7 +563,7 @@ class StudentFeeController extends Controller
 
     public function storeStudent(Request $request)
     {
-        // Validate input
+        // ✅ ENHANCED VALIDATION
         $validated = $request->validate([
             // Personal Information
             'last_name' => 'required|string|max:255',
@@ -580,32 +580,29 @@ class StudentFeeController extends Controller
             'year_level' => 'required|string|in:1st Year,2nd Year,3rd Year,4th Year',
             'student_id' => 'nullable|string|unique:users,student_id',
             
-            // OBE Mode
+            // OBE Mode - Make required_with rules explicit
             'program_id' => 'nullable|exists:programs,id',
-            'semester' => 'nullable|string',
-            'school_year' => 'nullable|string',
+            'semester' => 'required_with:program_id|string|in:1st Sem,2nd Sem,Summer',
+            'school_year' => 'required_with:program_id|string|regex:/^\d{4}-\d{4}$/',
             
             // Legacy Mode
-            'course' => 'nullable|string',
+            'course' => 'required_without:program_id|string',
             
             // Options
             'auto_generate_assessment' => 'boolean',
+        ], [
+            'semester.required_with' => 'Semester is required when selecting an OBE program.',
+            'school_year.required_with' => 'School year is required when selecting an OBE program.',
+            'school_year.regex' => 'School year must be in format: 2025-2026',
+            'course.required_without' => 'Either an OBE program or legacy course must be selected.',
         ]);
-
-        // Validate that either program_id OR course is provided
-        if (!$validated['program_id'] && !$validated['course']) {
-            return back()->withErrors([
-                'program_id' => 'Either an OBE program or legacy course must be selected.',
-                'course' => 'Either an OBE program or legacy course must be selected.',
-            ])->withInput();
-        }
 
         DB::beginTransaction();
         try {
             // Generate student ID if not provided
             $studentId = $validated['student_id'] ?? $this->generateUniqueStudentId();
 
-            // Determine course name
+            // Determine course name and mode
             if ($validated['program_id']) {
                 $program = Program::findOrFail($validated['program_id']);
                 $courseName = $program->full_name;
@@ -632,18 +629,8 @@ class StudentFeeController extends Controller
                 'password' => Hash::make('password'),
             ]);
 
-            if (!$user->id) {
-                throw new \Exception('Failed to create user record');
-            }
-
-            \Log::info('User created successfully', [
-                'user_id' => $user->id,
-                'student_id' => $studentId,
-                'course' => $courseName,
-            ]);
-
             // Create Student Profile
-            $student = Student::create([
+            Student::create([
                 'user_id' => $user->id,
                 'student_id' => $studentId,
                 'last_name' => $validated['last_name'],
@@ -659,19 +646,15 @@ class StudentFeeController extends Controller
                 'total_balance' => 0,
             ]);
 
-            \Log::info('Student profile created', ['student_id' => $student->id]);
-
             // Create Account
             $user->account()->create(['balance' => 0]);
 
-            \Log::info('Account created', ['user_id' => $user->id]);
-
-            // Auto-generate assessment for OBE students
+            // ✅ FIX: Auto-generate assessment for OBE students
             if ($isOBE && $request->boolean('auto_generate_assessment')) {
                 $curriculum = Curriculum::where('program_id', $validated['program_id'])
                     ->where('year_level', $validated['year_level'])
-                    ->where('semester', $validated['semester'] ?? '1st Sem')
-                    ->where('school_year', $validated['school_year'] ?? now()->year . '-' . (now()->year + 1))
+                    ->where('semester', $validated['semester'])
+                    ->where('school_year', $validated['school_year'])
                     ->where('is_active', true)
                     ->first();
 
@@ -681,23 +664,29 @@ class StudentFeeController extends Controller
                     \Log::info('Assessment generated successfully', [
                         'user_id' => $user->id,
                         'assessment_id' => $assessment->id,
+                        'total' => $assessment->total_assessment,
                     ]);
+                    
+                    $successMessage = 'Student created successfully with assessment!';
                 } else {
                     \Log::warning('No curriculum found for auto-assessment', [
                         'program_id' => $validated['program_id'],
                         'year_level' => $validated['year_level'],
-                        'semester' => $validated['semester'] ?? '1st Sem',
-                        'school_year' => $validated['school_year'] ?? now()->year . '-' . (now()->year + 1),
+                        'semester' => $validated['semester'],
+                        'school_year' => $validated['school_year'],
                     ]);
+                    
+                    $successMessage = 'Student created successfully, but no curriculum found. Please create assessment manually.';
                 }
+            } else {
+                $successMessage = 'Student created successfully!';
             }
 
             DB::commit();
 
             return redirect()
                 ->route('student-fees.show', $user->id)
-                ->with('success', 'Student created successfully' . 
-                    ($isOBE && $request->boolean('auto_generate_assessment') ? ' with assessment!' : '!'));
+                ->with('success', $successMessage);
 
         } catch (\Exception $e) {
             DB::rollBack();

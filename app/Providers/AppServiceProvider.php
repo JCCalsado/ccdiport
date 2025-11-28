@@ -4,6 +4,7 @@ namespace App\Providers;
 
 use Illuminate\Support\ServiceProvider;
 use Inertia\Inertia;
+use App\Services\AssessmentGeneratorService;
 
 class AppServiceProvider extends ServiceProvider
 {
@@ -12,7 +13,7 @@ class AppServiceProvider extends ServiceProvider
      */
     public function register(): void
     {
-        //
+        $this->app->singleton(AssessmentGeneratorService::class);
     }
 
     /**
@@ -21,14 +22,14 @@ class AppServiceProvider extends ServiceProvider
     public function boot(): void
     {
         Inertia::share([
-        'auth' => fn () => [
-            'user' => auth()->user() ? [
-                'id' => auth()->id(),
-                'name' => auth()->user()->name,
-                'email' => auth()->user()->email,
-                'role' => auth()->user()->role,
-            ] : null,
-        ],
-    ]);
+            'auth' => fn () => [
+                'user' => auth()->user() ? [
+                    'id' => auth()->id(),
+                    'name' => auth()->user()->name,
+                    'email' => auth()->user()->email,
+                    'role' => auth()->user()->role,
+                ] : null,
+            ],
+        ]);
     }
 }

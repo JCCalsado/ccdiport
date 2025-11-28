@@ -7,9 +7,7 @@ use App\Models\Curriculum;
 use App\Models\StudentAssessment;
 use App\Models\StudentCurriculum;
 use App\Models\StudentPaymentTerm;
-use App\Models\Transaction;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Str;
 use Carbon\Carbon;
 
 class AssessmentGeneratorService
@@ -105,9 +103,6 @@ class AssessmentGeneratorService
             // Create payment terms
             $this->createPaymentTerms($student, $curriculum, $paymentTerms);
 
-            // DO NOT create transactions yet - only payment terms
-            // Transactions will be created when terms are posted as charges
-
             DB::commit();
             
             \Log::info('Assessment generated successfully', [
@@ -131,7 +126,7 @@ class AssessmentGeneratorService
     }
 
     /**
-     * Generate payment terms breakdown
+     * ✅ FIX: Generate payment terms breakdown
      */
     protected function generatePaymentTerms(float $totalAmount, int $termCount = 5): array
     {
@@ -148,7 +143,7 @@ class AssessmentGeneratorService
     }
 
     /**
-     * Create StudentPaymentTerm records
+     * ✅ FIX: Create StudentPaymentTerm records - FIXED CARBON PARSE
      */
     protected function createPaymentTerms(User $student, Curriculum $curriculum, array $paymentTerms): void
     {
@@ -161,7 +156,11 @@ class AssessmentGeneratorService
         ];
 
         $order = 1;
-        $startDate = Carbon::parse($curriculum->school_year . '-08-01');
+        
+        // ✅ FIX: Extract year from "2025-2026" format
+        $yearParts = explode('-', $curriculum->school_year);
+        $startYear = (int) $yearParts[0]; // 2025
+        $startDate = Carbon::create($startYear, 8, 1); // August 1, 2025
 
         $weeksMap = [
             'upon_registration' => 0,
@@ -191,7 +190,7 @@ class AssessmentGeneratorService
     }
 
     /**
-     * Get curriculum preview data
+     * ✅ FIX: Get curriculum preview data - COMPLETE STRUCTURE
      */
     public function getCurriculumPreview(int $programId, string $yearLevel, string $semester, string $schoolYear): ?array
     {
@@ -206,6 +205,13 @@ class AssessmentGeneratorService
         if (!$curriculum) {
             return null;
         }
+
+        // Calculate totals
+        $tuition = $curriculum->calculateTuition();
+        $labFees = $curriculum->calculateLabFees();
+        $registrationFee = $curriculum->registration_fee;
+        $miscFee = $curriculum->misc_fee;
+        $totalAssessment = $tuition + $labFees + $registrationFee + $miscFee;
 
         return [
             'id' => $curriculum->id,
@@ -222,11 +228,11 @@ class AssessmentGeneratorService
                 ];
             })->values()->toArray(),
             'totals' => [
-                'tuition' => (float) $curriculum->calculateTuition(),
-                'lab_fees' => (float) $curriculum->calculateLabFees(),
-                'registration_fee' => (float) $curriculum->registration_fee,
-                'misc_fee' => (float) $curriculum->misc_fee,
-                'total_assessment' => (float) $curriculum->calculateTotalAssessment(),
+                'tuition' => (float) $tuition,
+                'lab_fees' => (float) $labFees,
+                'registration_fee' => (float) $registrationFee, // ✅ NOW INCLUDED
+                'misc_fee' => (float) $miscFee, // ✅ NOW INCLUDED
+                'total_assessment' => (float) $totalAssessment,
             ],
         ];
     }
