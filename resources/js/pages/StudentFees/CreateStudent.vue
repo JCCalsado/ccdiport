@@ -324,7 +324,7 @@ const submit = () => {
                                 size="sm"
                                 @click="toggleCurriculumMode"
                             >
-                                {{ useOBECurriculum ? 'Use Legacy Course' : 'Use OBE Program' }}
+                                {{ useOBECurriculum ? 'Switch to Irregular Student Mode' : 'Switch to Regular (OBE) Student Mode' }}
                             </Button>
                         </CardTitle>
                     </CardHeader>
