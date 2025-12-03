@@ -31,6 +31,7 @@ Route::middleware(['auth', 'verified', 'role:student'])->prefix('student')->grou
     Route::get('/dashboard', [StudentDashboardController::class, 'index'])->name('student.dashboard');
     Route::get('/account', [StudentAccountController::class, 'index'])->name('student.account');
     Route::get('/profile', [StudentController::class, 'profile'])->name('student.profile');
+    Route::get('student/profile', [StudentController::class, 'profile'])->name('student.profile');
     Route::get('/payment', [PaymentController::class, 'create'])->name('payment.create');
 });
 
@@ -63,6 +64,14 @@ Route::middleware(['auth', 'verified', 'role:admin,accounting'])->prefix('studen
         ->name('student-fees.curriculum.terms');
     Route::post('/curriculum/preview', [StudentFeeController::class, 'getCurriculumPreview'])
         ->name('student-fees.curriculum.preview');
+
+    Route::get('students', [StudentController::class, 'index'])->name('students.index');
+    Route::get('students/{accountId}', [StudentController::class, 'show'])->name('students.show');
+    Route::get('students/{accountId}/edit', [StudentController::class, 'edit'])->name('students.edit');
+    Route::put('students/{accountId}', [StudentController::class, 'update'])->name('students.update');
+    Route::delete('students/{accountId}', [StudentController::class, 'destroy'])->name('students.destroy');
+    Route::post('students/{accountId}/payments', [StudentController::class, 'storePayment'])
+        ->name('students.payments.store');
 });
 
 // Curriculum Management

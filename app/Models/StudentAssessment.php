@@ -8,19 +8,20 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 class StudentAssessment extends Model
 {
     protected $fillable = [
-        'user_id',
-        'curriculum_id', // ← Make sure this is in fillable
+        'user_id',              // ⚠️ Keep for backward compatibility
+        'account_id',           // ✅ NEW - Primary identifier
+        'curriculum_id',
         'assessment_number',
         'year_level',
         'semester',
         'school_year',
         'tuition_fee',
         'other_fees',
-        'registration_fee', // ← Make sure this is in fillable
+        'registration_fee',
         'total_assessment',
         'subjects',
         'fee_breakdown',
-        'payment_terms', // ← Make sure this is in fillable
+        'payment_terms',
         'status',
         'created_by',
     ];
@@ -28,22 +29,36 @@ class StudentAssessment extends Model
     protected $casts = [
         'tuition_fee' => 'decimal:2',
         'other_fees' => 'decimal:2',
-        'registration_fee' => 'decimal:2', // ← Make sure this is cast
+        'registration_fee' => 'decimal:2',
         'total_assessment' => 'decimal:2',
         'subjects' => 'array',
         'fee_breakdown' => 'array',
-        'payment_terms' => 'array', // ← Make sure this is cast
+        'payment_terms' => 'array',
     ];
 
-    // ✅ ADD THIS RELATIONSHIP
-    public function curriculum(): BelongsTo
+    // ============================================
+    // RELATIONSHIPS
+    // ============================================
+
+    /**
+     * ✅ NEW: Primary relationship via account_id
+     */
+    public function student(): BelongsTo
     {
-        return $this->belongsTo(Curriculum::class);
+        return $this->belongsTo(Student::class, 'account_id', 'account_id');
     }
 
+    /**
+     * ⚠️ Keep for backward compatibility (will be deprecated)
+     */
     public function user(): BelongsTo
     {
         return $this->belongsTo(User::class);
+    }
+
+    public function curriculum(): BelongsTo
+    {
+        return $this->belongsTo(Curriculum::class);
     }
 
     public function creator(): BelongsTo
@@ -51,12 +66,36 @@ class StudentAssessment extends Model
         return $this->belongsTo(User::class, 'created_by');
     }
 
-    public function student(): BelongsTo
+    // ============================================
+    // SCOPES
+    // ============================================
+
+    /**
+     * ✅ NEW: Query by account_id (PRIMARY METHOD)
+     */
+    public function scopeByAccountId($query, string $accountId)
     {
-        return $this->belongsTo(Student::class, 'user_id', 'user_id');
+        return $query->where('account_id', $accountId);
     }
 
-    // Generate unique assessment number
+    public function scopeActive($query)
+    {
+        return $query->where('status', 'active');
+    }
+
+    public function scopeForTerm($query, $schoolYear, $semester)
+    {
+        return $query->where('school_year', $schoolYear)
+                     ->where('semester', $semester);
+    }
+
+    // ============================================
+    // HELPER METHODS
+    // ============================================
+
+    /**
+     * Generate unique assessment number
+     */
     public static function generateAssessmentNumber(): string
     {
         $year = now()->year;
@@ -74,10 +113,27 @@ class StudentAssessment extends Model
         return "ASS-{$year}-{$newNumber}";
     }
 
-    // Calculate total from breakdown
+    /**
+     * Calculate total from breakdown
+     */
     public function calculateTotal(): void
     {
-        $this->total_assessment = $this->tuition_fee + $this->other_fees + ($this->registration_fee ?? 0);
+        $this->total_assessment = $this->tuition_fee 
+            + $this->other_fees 
+            + ($this->registration_fee ?? 0);
         $this->save();
+    }
+
+    /**
+     * Get payment terms with status
+     */
+    public function getPaymentTermsStatusAttribute(): array
+    {
+        if (!$this->payment_terms) {
+            return [];
+        }
+
+        // This would ideally check StudentPaymentTerm records
+        return $this->payment_terms;
     }
 }

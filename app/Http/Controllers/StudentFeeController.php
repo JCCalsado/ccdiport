@@ -50,7 +50,7 @@ class StudentFeeController extends Controller
     public function index(Request $request)
     {
         $query = Student::with(['user', 'account'])
-            ->whereNotNull('user_id'); // ensure linked user
+            ->whereNotNull('account_id'); // ✅ Only students with account_id
 
         if ($request->filled('search')) {
             $search = $request->search;
@@ -164,20 +164,24 @@ class StudentFeeController extends Controller
             ]);
         }
 
-        $students = Student::whereHas('user')
+        // ✅ AJAX endpoint for fetching student data by account_id
+        if ($request->has('get_data') && $request->has('account_id')) {
+            return $this->getStudentDataForAssessment($request->account_id);
+        }
+
+        $students = Student::whereNotNull('account_id')
             ->where('status', 'enrolled')
             ->orderBy('last_name')
             ->get()
             ->map(function ($student) {
                 return [
                     'id' => $student->id,
-                    'account_id' => $student->account_id,
+                    'account_id' => $student->account_id, // ✅ PRIMARY ID
                     'student_id' => $student->student_id,
-                    'name' => $student->last_name . ', ' . $student->first_name,
-                    'email' => $student->email ?? ($student->user->email ?? null),
+                    'name' => $student->full_name,
+                    'email' => $student->email,
                     'course' => $student->course,
                     'year_level' => $student->year_level,
-                    'status' => $student->status,
                 ];
             });
 
@@ -194,6 +198,54 @@ class StudentFeeController extends Controller
             'yearLevels' => $yearLevels,
             'semesters' => $semesters,
             'schoolYears' => $schoolYears,
+        ]);
+    }
+
+    /**
+     * ✅ NEW: Get student data for assessment (AJAX)
+     */
+    protected function getStudentDataForAssessment(string $accountId)
+    {
+        $student = Student::byAccountId($accountId)->firstOrFail();
+
+        $subjects = Subject::active()
+            ->where('course', $student->course)
+            ->where('year_level', $student->year_level)
+            ->get()
+            ->map(function ($subject) {
+                return [
+                    'id' => $subject->id,
+                    'code' => $subject->code,
+                    'name' => $subject->name,
+                    'units' => $subject->units,
+                    'price_per_unit' => (float) $subject->price_per_unit,
+                    'has_lab' => $subject->has_lab,
+                    'lab_fee' => (float) $subject->lab_fee,
+                    'total_cost' => (float) $subject->total_cost,
+                ];
+            });
+
+        $fees = Fee::active()
+            ->whereIn('category', ['Laboratory', 'Library', 'Athletic', 'Miscellaneous'])
+            ->get()
+            ->map(function ($fee) {
+                return [
+                    'id' => $fee->id,
+                    'name' => $fee->name,
+                    'category' => $fee->category,
+                    'amount' => (float) $fee->amount,
+                ];
+            });
+
+        return response()->json([
+            'subjects' => $subjects,
+            'fees' => $fees,
+            'student' => [
+                'account_id' => $student->account_id,
+                'name' => $student->full_name,
+                'course' => $student->course,
+                'year_level' => $student->year_level,
+            ],
         ]);
     }
 
@@ -272,7 +324,9 @@ class StudentFeeController extends Controller
 
         $data = AssessmentDataService::getUnifiedAssessmentData($accountId);
 
-        return Inertia::render('StudentFees/Show', $data);
+        return Inertia::render('StudentFees/Show', array_merge($data, [
+            'account_id' => $accountId, // ✅ Ensure frontend receives it
+        ]));
     }
 
     /**
@@ -392,7 +446,7 @@ class StudentFeeController extends Controller
     /**
      * Update assessment (tied to account_id)
      */
-    public function update(Request $request, $accountId)
+    public function update(Request $request, string $accountId)
     {
         $validated = $request->validate([
             'year_level' => 'required|string',
@@ -408,6 +462,7 @@ class StudentFeeController extends Controller
         ]);
 
         $student = Student::where('account_id', $accountId)->with('user', 'account')->firstOrFail();
+        // $student = Student::byAccountId($accountId)->firstOrFail();
 
         DB::beginTransaction();
         try {
@@ -432,10 +487,7 @@ class StudentFeeController extends Controller
                 'fee_breakdown' => $validated['other_fees'] ?? [],
             ]);
 
-            // remove previous transactions related to this assessment (by meta assessment_id) for this account
-            Transaction::where('account_id', $accountId)
-                ->where('meta->assessment_id', $assessment->id)
-                ->delete();
+            // Deletion is prohibited to preserve payment history
 
             foreach ($validated['subjects'] as $subject) {
                 Transaction::create([
@@ -851,5 +903,95 @@ class StudentFeeController extends Controller
                 'paid_amount' => 0,
             ]);
         }
+    }
+
+    /**
+     * ✅ Create transactions from assessment
+     */
+    protected function createTransactionsFromAssessment(StudentAssessment $assessment, Student $student): void
+    {
+        foreach ($assessment->subjects as $subject) {
+            Transaction::create([
+                'account_id' => $student->account_id, // ✅ PRIMARY FIELD
+                'user_id' => $student->user_id,
+                'reference' => 'SUBJ-' . strtoupper(Str::random(8)),
+                'kind' => 'charge',
+                'type' => 'Tuition',
+                'year' => explode('-', $assessment->school_year)[0],
+                'semester' => $assessment->semester,
+                'amount' => $subject['amount'],
+                'status' => 'pending',
+                'meta' => [
+                    'assessment_id' => $assessment->id,
+                    'subject_id' => $subject['id'],
+                ],
+            ]);
+        }
+
+        foreach ($assessment->fee_breakdown ?? [] as $fee) {
+            $feeModel = Fee::find($fee['id']);
+            Transaction::create([
+                'account_id' => $student->account_id, // ✅ PRIMARY FIELD
+                'user_id' => $student->user_id,
+                'fee_id' => $fee['id'],
+                'reference' => 'FEE-' . strtoupper(Str::random(8)),
+                'kind' => 'charge',
+                'type' => $feeModel->category,
+                'year' => explode('-', $assessment->school_year)[0],
+                'semester' => $assessment->semester,
+                'amount' => $fee['amount'],
+                'status' => 'pending',
+                'meta' => [
+                    'assessment_id' => $assessment->id,
+                    'fee_code' => $feeModel->code,
+                    'fee_name' => $feeModel->name,
+                ],
+            ]);
+        }
+    }
+
+    /**
+     * ✅ Generate payment terms
+     */
+    protected function generatePaymentTerms(StudentAssessment $assessment, Student $student): void
+    {
+        $totalAmount = $assessment->total_assessment;
+        $termAmount = round($totalAmount / 5, 2);
+        $lastTermAmount = $totalAmount - ($termAmount * 4);
+
+        $terms = [
+            ['name' => 'Upon Registration', 'order' => 1, 'weeks' => 0, 'amount' => $termAmount],
+            ['name' => 'Prelim', 'order' => 2, 'weeks' => 6, 'amount' => $termAmount],
+            ['name' => 'Midterm', 'order' => 3, 'weeks' => 12, 'amount' => $termAmount],
+            ['name' => 'Semi-Final', 'order' => 4, 'weeks' => 15, 'amount' => $termAmount],
+            ['name' => 'Final', 'order' => 5, 'weeks' => 18, 'amount' => $lastTermAmount],
+        ];
+
+        $startDate = Carbon::parse(explode('-', $assessment->school_year)[0] . '-08-01');
+
+        foreach ($terms as $term) {
+            StudentPaymentTerm::create([
+                'account_id' => $student->account_id, // ✅ PRIMARY FIELD
+                'user_id' => $student->user_id,
+                'curriculum_id' => $assessment->curriculum_id,
+                'school_year' => $assessment->school_year,
+                'semester' => $assessment->semester,
+                'term_name' => $term['name'],
+                'term_order' => $term['order'],
+                'amount' => $term['amount'],
+                'due_date' => $startDate->copy()->addWeeks($term['weeks']),
+                'status' => 'pending',
+                'paid_amount' => 0,
+            ]);
+        }
+    }
+
+    protected function getSchoolYears(): array
+    {
+        $currentYear = now()->year;
+        return [
+            "{$currentYear}-" . ($currentYear + 1),
+            ($currentYear - 1) . "-{$currentYear}",
+        ];
     }
 }

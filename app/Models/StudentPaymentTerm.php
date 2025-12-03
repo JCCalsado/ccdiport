@@ -54,6 +54,13 @@ class StudentPaymentTerm extends Model
         return $this->paid_amount >= $this->amount;
     }
 
+    public function isOverdue(): bool
+    {
+        return $this->due_date 
+            && $this->due_date->isPast() 
+            && !$this->isFullyPaid();
+    }
+
     public function scopeUnpaid($query)
     {
         return $query->where('status', '!=', 'paid')
@@ -64,6 +71,23 @@ class StudentPaymentTerm extends Model
     {
         return $query->where('school_year', $schoolYear)
                      ->where('semester', $semester);
+    }
+
+    public function scopeOverdue($query)
+    {
+        return $query->where('due_date', '<', now())
+                     ->where('status', '!=', 'paid')
+                     ->whereRaw('paid_amount < amount');
+    }
+
+    public function scopePending($query)
+    {
+        return $query->where('status', 'pending');
+    }
+
+    public function scopePartial($query)
+    {
+        return $query->where('status', 'partial');
     }
 
     // ✅ NEW: Scope by account_id

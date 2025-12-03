@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasManyThrough;
 use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
@@ -57,7 +58,15 @@ class User extends Authenticatable
     // Relationships
     public function student(): HasOne
     {
-        return $this->hasOne(Student::class);
+        return $this->hasOne(Student::class, 'user_id');
+    }
+
+    /**
+     * ✅ Get account_id through student
+     */
+    public function getAccountIdAttribute(): ?string
+    {
+        return $this->student?->account_id;
     }
 
     public function account(): HasOne
@@ -73,7 +82,16 @@ class User extends Authenticatable
     /**
      * ✅ NEW: Payment terms relationship
      */
-    public function paymentTerms(): HasMany
+    // public function paymentTerms(): HasMany
+    // {
+    //     if (!$this->student) {
+    //         return $this->hasMany(StudentPaymentTerm::class, 'user_id')->where('id', 0); // Empty
+    //     }
+        
+    //     return $this->hasMany(StudentPaymentTerm::class, 'account_id', 'id')
+    //         ->where('account_id', $this->student->account_id);
+    // }
+    public function paymentTerms(): HasManyThrough
     {
         return $this->hasManyThrough(
             StudentPaymentTerm::class,
@@ -124,15 +142,15 @@ class User extends Authenticatable
     /**
      * Get all assessments for this student
      */
-    public function assessments(): HasMany
+    public function assessments(): HasManyThrough
     {
         return $this->hasManyThrough(
             StudentAssessment::class,
             Student::class,
-            'user_id',      // Foreign key on students table
-            'account_id',   // Foreign key on assessments table
-            'id',           // Local key on users table
-            'account_id'    // Local key on students table
+            'user_id',
+            'account_id',
+            'id',
+            'account_id'
         );
     }
 
