@@ -4,18 +4,14 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Relations\HasMany;
-use Illuminate\Database\Eloquent\Relations\HasManyThrough;
 use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
-use App\Enums\UserRoleEnum;
-use App\Models\StudentPaymentTerm;
 
 class User extends Authenticatable
 {
     use HasFactory, Notifiable;
 
-    // Status constants
     const STATUS_ACTIVE = 'active';
     const STATUS_GRADUATED = 'graduated';
     const STATUS_DROPPED = 'dropped';
@@ -43,7 +39,6 @@ class User extends Authenticatable
         'remember_token',
     ];
 
-    // Set the appends property to include virtual attributes
     protected $appends = ['name'];
 
     protected function casts(): array
@@ -55,18 +50,13 @@ class User extends Authenticatable
         ];
     }
 
-    // Relationships
+    // ============================================
+    // RELATIONSHIPS
+    // ============================================
+
     public function student(): HasOne
     {
         return $this->hasOne(Student::class, 'user_id');
-    }
-
-    /**
-     * ✅ Get account_id through student
-     */
-    public function getAccountIdAttribute(): ?string
-    {
-        return $this->student?->account_id;
     }
 
     public function account(): HasOne
@@ -74,38 +64,72 @@ class User extends Authenticatable
         return $this->hasOne(Account::class);
     }
 
+    /**
+     * ⚠️ DEPRECATED: Use student->transactions() instead
+     * Kept for backward compatibility only
+     */
     public function transactions(): HasMany
     {
-        return $this->hasMany(Transaction::class);
+        return $this->hasMany(Transaction::class, 'user_id');
     }
 
+    // ============================================
+    // ACCOUNT_ID ACCESSORS (Via Student)
+    // ============================================
+
     /**
-     * ✅ NEW: Payment terms relationship
+     * ✅ Get account_id through student relationship
      */
-    // public function paymentTerms(): HasMany
-    // {
-    //     if (!$this->student) {
-    //         return $this->hasMany(StudentPaymentTerm::class, 'user_id')->where('id', 0); // Empty
-    //     }
-        
-    //     return $this->hasMany(StudentPaymentTerm::class, 'account_id', 'id')
-    //         ->where('account_id', $this->student->account_id);
-    // }
-    public function paymentTerms(): HasManyThrough
+    public function getAccountIdAttribute(): ?string
     {
-        return $this->hasManyThrough(
-            StudentPaymentTerm::class,
-            Student::class,
-            'user_id',      // Foreign key on students table
-            'account_id',   // Foreign key on payment_terms table
-            'id',           // Local key on users table
-            'account_id'    // Local key on students table
-        );
+        return $this->student?->account_id;
     }
 
     /**
-     * Get the user's full name.
-     * This is the main accessor that will be serialized in API responses.
+     * ✅ Get payment terms through student relationship
+     */
+    public function getPaymentTermsAttribute()
+    {
+        if (!$this->student) {
+            return collect([]);
+        }
+
+        return StudentPaymentTerm::where('account_id', $this->student->account_id)->get();
+    }
+
+    /**
+     * ✅ Get assessments through student relationship
+     */
+    public function getAssessmentsAttribute()
+    {
+        if (!$this->student) {
+            return collect([]);
+        }
+
+        return StudentAssessment::where('account_id', $this->student->account_id)->get();
+    }
+
+    /**
+     * ✅ Get active assessment
+     */
+    public function getActiveAssessmentAttribute()
+    {
+        if (!$this->student) {
+            return null;
+        }
+
+        return StudentAssessment::where('account_id', $this->student->account_id)
+            ->where('status', 'active')
+            ->latest()
+            ->first();
+    }
+
+    // ============================================
+    // NAME ACCESSORS
+    // ============================================
+
+    /**
+     * Get the user's full name
      */
     public function getNameAttribute(): string
     {
@@ -114,8 +138,7 @@ class User extends Authenticatable
     }
 
     /**
-     * Get the user's full name (alternative format).
-     * Use this for display purposes where you want "Last, First MI."
+     * Get the user's full name (alternative format)
      */
     public function getFullNameAttribute(): string
     {
@@ -123,51 +146,9 @@ class User extends Authenticatable
         return "{$this->last_name}, {$this->first_name} {$mi}";
     }
 
-    /**
-     * Get validation rules for user updates
-     */
-    public static function getValidationRules($userId = null): array
-    {
-        return [
-            'student_id' => 'nullable|string|unique:users,student_id,' . $userId,
-            'address' => 'nullable|string|max:255',
-            'course' => 'nullable|string|max:100',
-            'year_level' => 'nullable|string|max:50',
-            'faculty' => 'nullable|string|max:100',
-            'status' => 'required|in:active,graduated,dropped',
-            'profile_picture' => 'nullable|image|mimes:jpeg,png,jpg,gif|max:2048',
-        ];
-    }
-
-    /**
-     * Get all assessments for this student
-     */
-    public function assessments(): HasManyThrough
-    {
-        return $this->hasManyThrough(
-            StudentAssessment::class,
-            Student::class,
-            'user_id',
-            'account_id',
-            'id',
-            'account_id'
-        );
-    }
-
-    /**
-     * Get active assessment
-     */
-    public function activeAssessment(): HasOne
-    {
-        return $this->hasOneThrough(
-            StudentAssessment::class,
-            Student::class,
-            'user_id',
-            'account_id',
-            'id',
-            'account_id'
-        )->where('status', 'active')->latest();
-    }
+    // ============================================
+    // ROLE HELPERS
+    // ============================================
 
     /**
      * Get role value (handles both string and enum)
@@ -186,5 +167,29 @@ class User extends Authenticatable
             return in_array($this->role_value, $roles);
         }
         return $this->role_value === $roles;
+    }
+
+    /**
+     * Check if user is a student
+     */
+    public function isStudent(): bool
+    {
+        return $this->role_value === 'student';
+    }
+
+    /**
+     * Check if user is admin
+     */
+    public function isAdmin(): bool
+    {
+        return $this->role_value === 'admin';
+    }
+
+    /**
+     * Check if user is accounting staff
+     */
+    public function isAccounting(): bool
+    {
+        return $this->role_value === 'accounting';
     }
 }

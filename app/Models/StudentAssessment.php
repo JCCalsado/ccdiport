@@ -8,8 +8,8 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 class StudentAssessment extends Model
 {
     protected $fillable = [
-        'user_id',              // ⚠️ Keep for backward compatibility
-        'account_id',           // ✅ NEW - Primary identifier
+        'account_id',           // ✅ PRIMARY IDENTIFIER
+        'user_id',              // ⚠️ Backward compatibility
         'curriculum_id',
         'assessment_number',
         'year_level',
@@ -40,20 +40,14 @@ class StudentAssessment extends Model
     // RELATIONSHIPS
     // ============================================
 
-    /**
-     * ✅ NEW: Primary relationship via account_id
-     */
     public function student(): BelongsTo
     {
         return $this->belongsTo(Student::class, 'account_id', 'account_id');
     }
 
-    /**
-     * ⚠️ Keep for backward compatibility (will be deprecated)
-     */
     public function user(): BelongsTo
     {
-        return $this->belongsTo(User::class);
+        return $this->belongsTo(User::class); // ⚠️ Backward compatibility
     }
 
     public function curriculum(): BelongsTo
@@ -70,9 +64,6 @@ class StudentAssessment extends Model
     // SCOPES
     // ============================================
 
-    /**
-     * ✅ NEW: Query by account_id (PRIMARY METHOD)
-     */
     public function scopeByAccountId($query, string $accountId)
     {
         return $query->where('account_id', $accountId);
@@ -93,9 +84,6 @@ class StudentAssessment extends Model
     // HELPER METHODS
     // ============================================
 
-    /**
-     * Generate unique assessment number
-     */
     public static function generateAssessmentNumber(): string
     {
         $year = now()->year;
@@ -113,27 +101,11 @@ class StudentAssessment extends Model
         return "ASS-{$year}-{$newNumber}";
     }
 
-    /**
-     * Calculate total from breakdown
-     */
     public function calculateTotal(): void
     {
         $this->total_assessment = $this->tuition_fee 
             + $this->other_fees 
             + ($this->registration_fee ?? 0);
         $this->save();
-    }
-
-    /**
-     * Get payment terms with status
-     */
-    public function getPaymentTermsStatusAttribute(): array
-    {
-        if (!$this->payment_terms) {
-            return [];
-        }
-
-        // This would ideally check StudentPaymentTerm records
-        return $this->payment_terms;
     }
 }

@@ -8,8 +8,8 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 class StudentPaymentTerm extends Model
 {
     protected $fillable = [
-        'user_id',        // Keep for backward compatibility
-        'account_id',     // ✅ NEW - Primary identifier
+        'account_id',     // ✅ PRIMARY IDENTIFIER
+        'user_id',        // ⚠️ Backward compatibility
         'curriculum_id',
         'school_year',
         'semester',
@@ -27,16 +27,22 @@ class StudentPaymentTerm extends Model
         'due_date' => 'date',
     ];
 
-    // ✅ NEW: Relationship via account_id
+    protected $appends = [
+        'remaining_balance',
+    ];
+
+    // ============================================
+    // RELATIONSHIPS
+    // ============================================
+
     public function student(): BelongsTo
     {
         return $this->belongsTo(Student::class, 'account_id', 'account_id');
     }
 
-    // Keep user relationship for backward compatibility
     public function user(): BelongsTo
     {
-        return $this->belongsTo(User::class);
+        return $this->belongsTo(User::class); // ⚠️ Backward compatibility
     }
 
     public function curriculum(): BelongsTo
@@ -44,10 +50,18 @@ class StudentPaymentTerm extends Model
         return $this->belongsTo(Curriculum::class);
     }
 
+    // ============================================
+    // COMPUTED ATTRIBUTES
+    // ============================================
+
     public function getRemainingBalanceAttribute(): float
     {
         return (float) ($this->amount - $this->paid_amount);
     }
+
+    // ============================================
+    // HELPER METHODS
+    // ============================================
 
     public function isFullyPaid(): bool
     {
@@ -59,6 +73,15 @@ class StudentPaymentTerm extends Model
         return $this->due_date 
             && $this->due_date->isPast() 
             && !$this->isFullyPaid();
+    }
+
+    // ============================================
+    // SCOPES
+    // ============================================
+
+    public function scopeByAccountId($query, string $accountId)
+    {
+        return $query->where('account_id', $accountId);
     }
 
     public function scopeUnpaid($query)
@@ -88,11 +111,5 @@ class StudentPaymentTerm extends Model
     public function scopePartial($query)
     {
         return $query->where('status', 'partial');
-    }
-
-    // ✅ NEW: Scope by account_id
-    public function scopeByAccountId($query, string $accountId)
-    {
-        return $query->where('account_id', $accountId);
     }
 }

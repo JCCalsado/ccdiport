@@ -9,8 +9,8 @@ use App\Services\AccountService;
 class Transaction extends Model
 {
     protected $fillable = [
-        'user_id',           // ⚠️ Keep for backward compatibility
-        'account_id',        // ✅ NEW - Primary identifier
+        'account_id',        // ✅ PRIMARY IDENTIFIER
+        'user_id',           // ⚠️ Kept for backward compatibility
         'fee_id',
         'reference',
         'payment_channel',
@@ -31,23 +31,17 @@ class Transaction extends Model
     ];
 
     // ============================================
-    // RELATIONSHIPS
+    // RELATIONSHIPS (PRIMARY: account_id)
     // ============================================
 
-    /**
-     * ✅ NEW: Primary relationship via account_id
-     */
     public function student(): BelongsTo
     {
         return $this->belongsTo(Student::class, 'account_id', 'account_id');
     }
 
-    /**
-     * ⚠️ Keep for backward compatibility (will be deprecated)
-     */
     public function user(): BelongsTo
     {
-        return $this->belongsTo(User::class);
+        return $this->belongsTo(User::class); // ⚠️ Backward compatibility
     }
 
     public function fee(): BelongsTo
@@ -59,9 +53,6 @@ class Transaction extends Model
     // SCOPES
     // ============================================
 
-    /**
-     * ✅ NEW: Query by account_id (PRIMARY METHOD)
-     */
     public function scopeByAccountId($query, string $accountId)
     {
         return $query->where('account_id', $accountId);
@@ -89,8 +80,7 @@ class Transaction extends Model
 
     public function scopeForTerm($query, $year, $semester)
     {
-        return $query->where('year', $year)
-                     ->where('semester', $semester);
+        return $query->where('year', $year)->where('semester', $semester);
     }
 
     // ============================================
@@ -100,19 +90,13 @@ class Transaction extends Model
     protected static function booted()
     {
         static::saved(function ($transaction) {
-            // Only recalculate if amount/status/kind changed
             if ($transaction->wasChanged(['amount', 'status', 'kind'])) {
                 app()->terminating(function () use ($transaction) {
-                    // ✅ Use account_id to find student
                     if ($transaction->account_id) {
                         $student = Student::where('account_id', $transaction->account_id)->first();
                         if ($student && $student->user) {
                             AccountService::recalculate($student->user);
                         }
-                    }
-                    // ⚠️ Fallback to user_id (backward compatibility)
-                    elseif ($transaction->user) {
-                        AccountService::recalculate($transaction->user);
                     }
                 });
             }

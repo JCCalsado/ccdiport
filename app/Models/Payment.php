@@ -13,8 +13,8 @@ class Payment extends Model
     const STATUS_FAILED = 'failed';
 
     protected $fillable = [
-        'student_id',      // ⚠️ Keep for backward compatibility
-        'account_id',      // ✅ NEW - Primary identifier
+        'account_id',      // ✅ PRIMARY IDENTIFIER
+        'student_id',      // ⚠️ Backward compatibility
         'amount',
         'description',
         'payment_method',
@@ -32,29 +32,20 @@ class Payment extends Model
     // RELATIONSHIPS
     // ============================================
 
-    /**
-     * ✅ NEW: Primary relationship via account_id
-     */
     public function studentByAccount(): BelongsTo
     {
         return $this->belongsTo(Student::class, 'account_id', 'account_id');
     }
 
-    /**
-     * ⚠️ Keep for backward compatibility (will be deprecated)
-     */
     public function student(): BelongsTo
     {
-        return $this->belongsTo(Student::class);
+        return $this->belongsTo(Student::class); // ⚠️ Backward compatibility
     }
 
     // ============================================
     // SCOPES
     // ============================================
 
-    /**
-     * ✅ NEW: Query by account_id (PRIMARY METHOD)
-     */
     public function scopeByAccountId($query, string $accountId)
     {
         return $query->where('account_id', $accountId);
@@ -82,7 +73,6 @@ class Payment extends Model
     protected static function booted()
     {
         static::saved(function ($payment) {
-            // Recalculate account balance when payment is saved
             if ($payment->account_id) {
                 $student = Student::where('account_id', $payment->account_id)->first();
                 if ($student && $student->user) {
