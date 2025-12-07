@@ -4,6 +4,7 @@ namespace Database\Seeders;
 
 use Illuminate\Database\Seeder;
 use App\Models\User;
+use App\Models\Student;
 use App\Models\StudentPaymentTerm;
 use App\Models\StudentAssessment;
 use Carbon\Carbon;
@@ -17,10 +18,10 @@ class StudentPaymentTermsSeeder extends Seeder
     {
         $this->command->info('📋 Generating payment terms for students...');
 
-        // Get all students who have assessments but no payment terms
-        $students = User::where('role', 'student')
-            ->whereHas('account')
+        // ✅ Get students who don't have payment terms yet (through student relationship)
+        $students = Student::whereNotNull('account_id')
             ->whereDoesntHave('paymentTerms')
+            ->with('user')
             ->get();
 
         if ($students->isEmpty()) {
@@ -34,8 +35,13 @@ class StudentPaymentTermsSeeder extends Seeder
         $startDate = Carbon::parse('2025-08-01');
 
         foreach ($students as $student) {
+            if (!$student->user) {
+                $this->command->warn("⚠️  Student {$student->account_id} has no user record, skipping...");
+                continue;
+            }
+
             // Get latest assessment or use default amounts
-            $assessment = StudentAssessment::where('user_id', $student->id)
+            $assessment = StudentAssessment::where('account_id', $student->account_id)
                 ->where('status', 'active')
                 ->latest()
                 ->first();
@@ -56,7 +62,8 @@ class StudentPaymentTermsSeeder extends Seeder
 
             foreach ($terms as $term) {
                 StudentPaymentTerm::create([
-                    'user_id' => $student->id,
+                    'account_id' => $student->account_id, // ✅ PRIMARY
+                    'user_id' => $student->user_id,       // Compatibility
                     'curriculum_id' => $assessment->curriculum_id ?? null,
                     'school_year' => $schoolYear,
                     'semester' => $semester,
@@ -70,7 +77,7 @@ class StudentPaymentTermsSeeder extends Seeder
                 $created++;
             }
 
-            $this->command->info("✓ Created payment terms for {$student->name}");
+            $this->command->info("✓ Created payment terms for {$student->full_name}");
         }
 
         $this->command->info("✅ Created {$created} payment terms for {$students->count()} students!");

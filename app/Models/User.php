@@ -7,6 +7,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
+use App\Models\StudentPaymentTerm;
 
 class User extends Authenticatable
 {
@@ -62,6 +63,14 @@ class User extends Authenticatable
     public function account(): HasOne
     {
         return $this->hasOne(Account::class);
+    }
+
+    /**
+     * ✅ Payment terms relationship through student
+     */
+    public function paymentTerms(): HasMany
+    {
+        return $this->hasMany(StudentPaymentTerm::class, 'user_id');
     }
 
     /**
