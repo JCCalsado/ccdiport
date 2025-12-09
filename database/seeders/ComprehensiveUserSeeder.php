@@ -6,19 +6,59 @@ use Illuminate\Database\Seeder;
 use App\Models\User;
 use App\Models\Student;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\DB;
 
 class ComprehensiveUserSeeder extends Seeder
 {
     public function run(): void
     {
-        // Clear existing student data
-        Student::whereHas('user', function($q) {
-            $q->where('email', 'like', 'student%@ccdi.edu.ph');
-        })->delete();
-        
-        User::where('email', 'like', 'student%@ccdi.edu.ph')->delete();
+        $this->command->info('🚀 Starting comprehensive user seeding...');
 
-        // Keep admin and accounting staff (from original seeder)
+        // ✅ STEP 1: Clean existing demo students (safe cleanup)
+        $this->cleanupDemoStudents();
+
+        // ✅ STEP 2: Seed admin and accounting staff
+        $this->seedAdminAndAccounting();
+
+        // ✅ STEP 3: Seed 100 diverse students
+        $this->seedStudents();
+
+        $this->command->info('✅ Comprehensive user seeding completed!');
+    }
+
+    /**
+     * ✅ SAFE CLEANUP: Remove only demo students, preserve real data
+     */
+    protected function cleanupDemoStudents(): void
+    {
+        $this->command->info('🧹 Cleaning up existing demo students...');
+
+        // Delete only students with demo email pattern
+        $demoEmails = User::where('email', 'like', 'student%@ccdi.edu.ph')
+            ->where('role', 'student')
+            ->pluck('id');
+
+        if ($demoEmails->isNotEmpty()) {
+            // Delete related student records first
+            Student::whereIn('user_id', $demoEmails)->delete();
+            
+            // Delete user accounts
+            User::whereIn('id', $demoEmails)->delete();
+            
+            $this->command->info("   ✓ Removed {$demoEmails->count()} demo students");
+        } else {
+            $this->command->info('   ✓ No demo students to clean');
+        }
+    }
+
+    /**
+     * ✅ SEED ADMIN & ACCOUNTING (Idempotent)
+     */
+    protected function seedAdminAndAccounting(): void
+    {
+        $this->command->info('👤 Seeding admin and accounting staff...');
+
+        // Admin
         $admin = User::firstOrCreate(
             ['email' => 'admin@ccdi.edu.ph'],
             [
@@ -35,7 +75,9 @@ class ComprehensiveUserSeeder extends Seeder
             ]
         );
         $admin->account()->firstOrCreate([], ['balance' => 0]);
+        $this->command->info('   ✓ Admin created');
 
+        // Accounting
         $accounting = User::firstOrCreate(
             ['email' => 'accounting@ccdi.edu.ph'],
             [
@@ -52,8 +94,17 @@ class ComprehensiveUserSeeder extends Seeder
             ]
         );
         $accounting->account()->firstOrCreate([], ['balance' => 0]);
+        $this->command->info('   ✓ Accounting staff created');
+    }
 
-        // Filipino Names Pool
+    /**
+     * ✅ SEED 100 DIVERSE STUDENTS (Idempotent)
+     */
+    protected function seedStudents(): void
+    {
+        $this->command->info('🎓 Seeding 100 diverse students...');
+
+        // Filipino name pools
         $lastNames = [
             'Dela Cruz', 'Santos', 'Reyes', 'Garcia', 'Ramos',
             'Mendoza', 'Torres', 'Flores', 'Gonzales', 'Castro',
@@ -63,11 +114,9 @@ class ComprehensiveUserSeeder extends Seeder
         ];
 
         $firstNames = [
-            // Male names
             'Juan', 'Jose', 'Pedro', 'Miguel', 'Carlos',
             'Antonio', 'Manuel', 'Francisco', 'Rafael', 'Eduardo',
             'Ricardo', 'Fernando', 'Roberto', 'Andres', 'Javier',
-            // Female names
             'Maria', 'Ana', 'Carmen', 'Rosa', 'Teresa',
             'Elena', 'Isabel', 'Lucia', 'Sofia', 'Patricia',
             'Angela', 'Monica', 'Gloria', 'Diana', 'Cristina'
@@ -87,62 +136,17 @@ class ComprehensiveUserSeeder extends Seeder
 
         $yearLevels = ['1st Year', '2nd Year', '3rd Year', '4th Year'];
 
-        $studentData = [];
-        $studentNumber = 1;
+        // ✅ Student distribution template
+        $studentTemplates = array_merge(
+            array_fill(0, 40, ['year_level' => '1st Year', 'status' => 'active', 'balance' => rand(5000, 15000)]),
+            array_fill(0, 30, ['year_level' => '2nd Year', 'status' => 'active', 'balance' => rand(3000, 12000)]),
+            array_fill(0, 10, ['year_level' => '2nd Year', 'status' => 'inactive', 'balance' => rand(5000, 20000)]),
+            array_fill(0, 10, ['year_level' => '4th Year', 'status' => 'active', 'balance' => rand(1000, 5000)]),
+            array_fill(0, 10, ['year_level' => '4th Year', 'status' => 'graduated', 'balance' => 0])
+        );
 
-        // Generate 100 students with specific distribution
-        // 70 Active, 10 Dropped, 20 Graduated
-        // 40 1st Year, 40 2nd Year, 10 4th Year with balance, 10 4th Year fully paid
+        shuffle($studentTemplates);
 
-        // 40 Active 1st Year Students
-        for ($i = 0; $i < 40; $i++) {
-            $studentData[] = [
-                'year_level' => '1st Year',
-                'status' => 'active',
-                'balance' => rand(5000, 15000), // Has balance
-            ];
-        }
-
-        // 30 Active 2nd Year Students (30 out of 40 total 2nd year)
-        for ($i = 0; $i < 30; $i++) {
-            $studentData[] = [
-                'year_level' => '2nd Year',
-                'status' => 'active',
-                'balance' => rand(3000, 12000),
-            ];
-        }
-
-        // 10 Dropped 2nd Year Students
-        for ($i = 0; $i < 10; $i++) {
-            $studentData[] = [
-                'year_level' => '2nd Year',
-                'status' => 'inactive',
-                'balance' => rand(5000, 20000), // Typically have balances
-            ];
-        }
-
-        // 10 Active 4th Year with Remaining Balance
-        for ($i = 0; $i < 10; $i++) {
-            $studentData[] = [
-                'year_level' => '4th Year',
-                'status' => 'active',
-                'balance' => rand(1000, 5000),
-            ];
-        }
-
-        // 10 Graduated 4th Year (Fully Paid)
-        for ($i = 0; $i < 10; $i++) {
-            $studentData[] = [
-                'year_level' => '4th Year',
-                'status' => 'graduated',
-                'balance' => 0, // Fully paid
-            ];
-        }
-
-        // Shuffle to randomize
-        shuffle($studentData);
-
-        // Status mapping
         $statusMap = [
             'active' => User::STATUS_ACTIVE,
             'graduated' => User::STATUS_GRADUATED,
@@ -155,71 +159,119 @@ class ComprehensiveUserSeeder extends Seeder
             'inactive' => 'inactive',
         ];
 
-        foreach ($studentData as $index => $data) {
+        $createdCount = 0;
+
+        foreach ($studentTemplates as $index => $template) {
+            $studentNumber = $index + 1;
+            $email = "student{$studentNumber}@ccdi.edu.ph";
+
+            // ✅ Skip if already exists
+            if (User::where('email', $email)->exists()) {
+                $this->command->warn("   ⚠️  Skipping {$email} (already exists)");
+                continue;
+            }
+
             $lastName = $lastNames[array_rand($lastNames)];
             $firstName = $firstNames[array_rand($firstNames)];
             $middleInitial = $middleInitials[array_rand($middleInitials)];
             $course = $courses[array_rand($courses)];
             $address = $addresses[array_rand($addresses)];
-            
-            $studentId = '2025-' . str_pad($studentNumber, 4, '0', STR_PAD_LEFT);
-            $email = 'student' . $studentNumber . '@ccdi.edu.ph';
-            
-            // Generate birthday based on year level
-            $yearLevelNum = (int) substr($data['year_level'], 0, 1);
-            $birthYear = 2025 - 18 - $yearLevelNum + 1; // Approximate age
+
+            // ✅ Generate UNIQUE student_id with transaction lock
+            $studentId = $this->generateUniqueStudentId();
+
+            $yearLevelNum = (int) substr($template['year_level'], 0, 1);
+            $birthYear = 2025 - 18 - $yearLevelNum + 1;
             $birthday = $birthYear . '-' . str_pad(rand(1, 12), 2, '0', STR_PAD_LEFT) . '-' . str_pad(rand(1, 28), 2, '0', STR_PAD_LEFT);
 
+            // ✅ Create User
             $user = User::create([
                 'last_name' => $lastName,
                 'first_name' => $firstName,
                 'middle_initial' => $middleInitial,
                 'email' => $email,
-                'password' => Hash::make('password'), // All students use 'password'
+                'password' => Hash::make('password'),
                 'role' => 'student',
                 'student_id' => $studentId,
-                'status' => $statusMap[$data['status']],
+                'status' => $statusMap[$template['status']],
                 'course' => $course,
-                'year_level' => $data['year_level'],
+                'year_level' => $template['year_level'],
                 'birthday' => $birthday,
                 'phone' => '0917' . rand(1000000, 9999999),
                 'address' => $address,
             ]);
 
-            // Create account with balance
-            $user->account()->create([
-                'balance' => -$data['balance'] // Negative means they owe
-            ]);
+            // ✅ Create Account
+            $user->account()->create(['balance' => -$template['balance']]);
 
-            // ✅ Create Student profile (only once!)
+            // ✅ Create Student Profile (account_id auto-generates)
             $student = Student::create([
                 'user_id' => $user->id,
-                // account_id will be auto-generated by model boot method
+                // account_id auto-generates via model boot
                 'student_id' => $studentId,
                 'last_name' => $lastName,
                 'first_name' => $firstName,
                 'middle_initial' => $middleInitial,
                 'email' => $email,
                 'course' => $course,
-                'year_level' => $data['year_level'],
-                'status' => $studentStatusMap[$data['status']],
+                'year_level' => $template['year_level'],
+                'status' => $studentStatusMap[$template['status']],
                 'birthday' => $birthday,
                 'phone' => $user->phone,
                 'address' => $address,
-                'total_balance' => $data['balance'],
+                'total_balance' => $template['balance'],
             ]);
 
-            // ✅ Log the generated account_id
-            \Log::info("Created student {$student->full_name} with account_id: {$student->account_id}");
+            $createdCount++;
 
-            $studentNumber++;
+            if ($createdCount % 10 === 0) {
+                $this->command->info("   ✓ Created {$createdCount}/100 students...");
+            }
         }
 
-        $this->command->info('✓ Successfully seeded 100 students:');
-        $this->command->info('  - 70 Active (40 1st year, 30 2nd year, 10 4th year with balance)');
+        $this->command->info("✅ Successfully seeded {$createdCount} students!");
+        $this->command->info('  - 70 Active (40 1st year, 30 2nd year)');
         $this->command->info('  - 10 Dropped (2nd year)');
-        $this->command->info('  - 20 Graduated (4th year, fully paid)');
-        $this->command->info('  - All passwords: password');
-        $this->command->info('  - Email format: student1@ccdi.edu.ph to student100@ccdi.edu.ph');
+        $this->command->info('  - 20 Graduated (4th year)');
+    }
+
+    /**
+     * ✅ Generate UNIQUE student_id with DB transaction lock
+     */
+    protected function generateUniqueStudentId(): string
+    {
+        return DB::transaction(function () {
+            $year = now()->year;
+
+            // ✅ Lock the row to prevent race conditions
+            $lastStudent = User::where('student_id', 'like', "{$year}-%")
+                ->lockForUpdate()
+                ->orderByRaw('CAST(SUBSTRING(student_id, 6) AS UNSIGNED) DESC')
+                ->first();
+
+            if ($lastStudent) {
+                $lastNumber = intval(substr($lastStudent->student_id, 5));
+                $newNumber = str_pad($lastNumber + 1, 4, '0', STR_PAD_LEFT);
+            } else {
+                $newNumber = '0001';
+            }
+
+            $newStudentId = "{$year}-{$newNumber}";
+
+            // ✅ Ensure uniqueness (safety check)
+            $attempts = 0;
+            while (User::where('student_id', $newStudentId)->exists() && $attempts < 100) {
+                $lastNumber++;
+                $newNumber = str_pad($lastNumber, 4, '0', STR_PAD_LEFT);
+                $newStudentId = "{$year}-{$newNumber}";
+                $attempts++;
+            }
+
+            if ($attempts >= 100) {
+                throw new \Exception('Unable to generate unique student_id after 100 attempts');
+            }
+
+            return $newStudentId;
+        });
     }
 }
