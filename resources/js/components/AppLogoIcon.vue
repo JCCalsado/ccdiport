@@ -1,26 +1,28 @@
 <script setup lang="ts">
-import type { HTMLAttributes } from 'vue';
+import type { HTMLAttributes } from 'vue'
 
 defineOptions({
     inheritAttrs: false,
-});
+})
 
 interface Props {
-    className?: HTMLAttributes['class'];
-    width?: number;
-    height?: number;
+    className?: HTMLAttributes['class']
+    width?: number
+    height?: number
 }
 
-defineProps<Props>();
+const props = defineProps<Props>()
 </script>
 
 <template>
     <img 
-        src="/images/logo.png" 
-        :class="className" 
-        :width="width || 40" 
-        :height="height || 42" 
-        alt="Logo" 
+        src="/images/logo2.jfif"
+        :class="['w-full h-full object-cover', className]"
+        :style="{
+            width: props.width ? props.width + 'px' : undefined,
+            height: props.height ? props.height + 'px' : undefined,
+        }"
+        alt="Logo"
         v-bind="$attrs"
     />
 </template>
