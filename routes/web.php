@@ -17,6 +17,8 @@ use App\Http\Controllers\NotificationController;
 use Illuminate\Support\Facades\Route;
 use Inertia\Inertia;
 use App\Http\Controllers\CurriculaController;
+use App\Http\Controllers\WebhookController;
+use App\Http\Controllers\StudentPaymentController;
 
 // ============================================
 // PUBLIC ROUTES
@@ -109,6 +111,27 @@ Route::middleware(['auth', 'verified', 'role:admin,accounting'])->prefix('studen
         ->name('student-fees.curriculum.terms');
     Route::post('/curriculum/preview', [StudentFeeController::class, 'getCurriculumPreview'])
         ->name('student-fees.curriculum.preview');
+});
+
+// ============================================
+// STUDENT PAYMENT ROUTES
+// ============================================
+
+Route::middleware(['auth', 'verified', 'role:student'])->prefix('student')->group(function () {
+    Route::get('/payment/create', [StudentPaymentController::class, 'create'])
+        ->name('student.payment.create');
+    
+    Route::post('/payment/process', [StudentPaymentController::class, 'process'])
+        ->name('student.payment.process');
+    
+    Route::get('/payment/success/{transaction}', [StudentPaymentController::class, 'success'])
+        ->name('student.payment.success');
+    
+    Route::get('/payment/failed/{transaction}', [StudentPaymentController::class, 'failed'])
+        ->name('student.payment.failed');
+    
+    Route::get('/payment/receipt/{transaction}', [StudentPaymentController::class, 'receipt'])
+        ->name('student.payment.receipt');
 });
 
 // ============================================
@@ -246,6 +269,19 @@ Route::middleware(['auth', 'verified', 'role:admin'])->prefix('admin')->group(fu
         ->name('admin.payment-gateways.toggle');
     Route::post('/payment-gateways/{gateway}/test', [App\Http\Controllers\Admin\PaymentGatewayController::class, 'test'])
         ->name('admin.payment-gateways.test');
+});
+
+// ============================================
+// WEBHOOK ROUTES (NO AUTH - PUBLIC)
+// ============================================
+
+Route::prefix('webhooks')->name('webhooks.')->group(function () {
+    Route::post('paymongo', [WebhookController::class, 'paymongo'])->name('paymongo');
+    Route::post('gcash', [WebhookController::class, 'gcash'])->name('gcash');
+    Route::post('maya', [WebhookController::class, 'maya'])->name('maya');
+    
+    // Test endpoint (local only)
+    Route::get('test', [WebhookController::class, 'test'])->name('test');
 });
 
 // ============================================
