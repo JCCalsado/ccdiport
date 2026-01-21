@@ -236,6 +236,18 @@ Route::middleware(['auth', 'verified'])->prefix('settings')->group(function () {
     });
 });
 
+// Payment Gateway Management (Admin Only)
+Route::middleware(['auth', 'verified', 'role:admin'])->prefix('admin')->group(function () {
+    Route::get('/payment-gateways', [App\Http\Controllers\Admin\PaymentGatewayController::class, 'index'])
+        ->name('admin.payment-gateways.index');
+    Route::post('/payment-gateways', [App\Http\Controllers\Admin\PaymentGatewayController::class, 'store'])
+        ->name('admin.payment-gateways.store');
+    Route::post('/payment-gateways/{gateway}/toggle', [App\Http\Controllers\Admin\PaymentGatewayController::class, 'toggleStatus'])
+        ->name('admin.payment-gateways.toggle');
+    Route::post('/payment-gateways/{gateway}/test', [App\Http\Controllers\Admin\PaymentGatewayController::class, 'test'])
+        ->name('admin.payment-gateways.test');
+});
+
 // ============================================
 // INCLUDE ADDITIONAL ROUTE FILES
 // ============================================
