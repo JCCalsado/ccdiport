@@ -1,501 +1,479 @@
 <script setup lang="ts">
-import { ref, computed } from 'vue'
-import { Head, router } from '@inertiajs/vue3'
-import AppLayout from '@/Layouts/AppLayout.vue'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
-import { Switch } from '@/components/ui/switch'
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { Alert, AlertDescription } from '@/components/ui/alert'
-import { Badge } from '@/components/ui/badge'
-import { Separator } from '@/components/ui/separator'
-import { 
-  CreditCard, 
-  Eye, 
-  EyeOff, 
-  Save, 
-  RefreshCw, 
-  AlertCircle,
-  CheckCircle2,
-  XCircle,
-  Settings,
-  Smartphone,
-  Building2,
-  Globe
-} from 'lucide-vue-next'
-import { useToast } from '@/components/ui/toast/use-toast'
+import { ref, computed } from 'vue';
+import { Head, router } from '@inertiajs/vue3';
+import AuthenticatedLayout from '@/layouts/AuthenticatedLayout.vue';
 
 interface PaymentGateway {
-  id: number
-  name: string
-  slug: string
-  is_active: boolean
-  is_sandbox: boolean
-  config: {
-    public_key?: string
-    secret_key?: string
-    merchant_id?: string
-    client_id?: string
-    client_secret?: string
-    webhook_secret?: string
-  }
+  id: number;
+  name: string;
+  slug: string;
+  logo_url: string | null;
+  description: string | null;
+  is_active: boolean;
+  supported_methods: string[];
   fees: {
-    type: 'percentage' | 'fixed'
-    amount: number
-  }
-  supported_methods: string[]
-  created_at: string
-  updated_at: string
-  last_used_at?: string
-  total_transactions?: number
-  total_amount?: number
+    percentage: number;
+    fixed: number;
+  };
+  config: {
+    environment: 'sandbox' | 'production';
+    public_key?: string | null;
+    secret_key?: string | null;
+    webhook_secret?: string | null;
+    api_key?: string | null;
+  };
+  sort_order: number;
+  created_at?: string;
+  updated_at?: string;
 }
 
 interface Props {
-  gateways: PaymentGateway[]
-  stats: {
-    total_active: number
-    total_transactions_today: number
-    total_amount_today: number
-    success_rate: number
-  }
+  gateways: PaymentGateway[];
 }
 
-const props = defineProps<Props>()
-const { toast } = useToast()
+const props = defineProps<Props>();
 
-// Form state
-const editingGateway = ref<PaymentGateway | null>(null)
-const showSecrets = ref<Record<string, boolean>>({})
-const isSaving = ref(false)
-const isTestingConnection = ref(false)
+const showConfigModal = ref(false);
+const selectedGateway = ref<PaymentGateway | null>(null);
+const configForm = ref({
+  environment: 'sandbox' as 'sandbox' | 'production',
+  public_key: '',
+  secret_key: '',
+  webhook_secret: '',
+  api_key: '',
+  percentage_fee: 0,
+  fixed_fee: 0,
+});
+const testingConnection = ref(false);
+const testResult = ref<{ success: boolean; message: string } | null>(null);
 
-// Toggle secret visibility
-const toggleSecretVisibility = (gatewayId: string, field: string) => {
-  const key = `${gatewayId}-${field}`
-  showSecrets.value[key] = !showSecrets.value[key]
-}
+const openConfigModal = (gateway: PaymentGateway) => {
+  selectedGateway.value = gateway;
+  configForm.value = {
+    environment: gateway.config.environment || 'sandbox',
+    public_key: gateway.config.public_key || '',
+    secret_key: gateway.config.secret_key || '',
+    webhook_secret: gateway.config.webhook_secret || '',
+    api_key: gateway.config.api_key || '',
+    percentage_fee: gateway.fees?.percentage || 0,
+    fixed_fee: gateway.fees?.fixed || 0,
+  };
+  testResult.value = null;
+  showConfigModal.value = true;
+};
 
-const isSecretVisible = (gatewayId: string, field: string): boolean => {
-  const key = `${gatewayId}-${field}`
-  return showSecrets.value[key] || false
-}
+const closeConfigModal = () => {
+  showConfigModal.value = false;
+  selectedGateway.value = null;
+  testResult.value = null;
+};
 
-// Gateway icons mapping
-const gatewayIcons = {
-  paymongo: CreditCard,
-  gcash: Smartphone,
-  maya: Smartphone,
-  'bank-transfer': Building2,
-  dragonpay: Globe,
-}
+const saveConfiguration = () => {
+  if (!selectedGateway.value) return;
 
-// Get gateway icon
-const getGatewayIcon = (slug: string) => {
-  return gatewayIcons[slug as keyof typeof gatewayIcons] || CreditCard
-}
+  router.post(
+    '/admin/payment-gateways',
+    {
+      gateway_id: selectedGateway.value.id,
+      environment: configForm.value.environment,
+      public_key: configForm.value.public_key,
+      secret_key: configForm.value.secret_key,
+      webhook_secret: configForm.value.webhook_secret,
+      api_key: configForm.value.api_key,
+      percentage_fee: configForm.value.percentage_fee,
+      fixed_fee: configForm.value.fixed_fee,
+    },
+    {
+      onSuccess: () => {
+        closeConfigModal();
+      },
+    }
+  );
+};
 
-// Get status badge variant
-const getStatusVariant = (isActive: boolean) => {
-  return isActive ? 'default' : 'secondary'
-}
+const testConnection = async () => {
+  if (!selectedGateway.value) return;
 
-// Start editing a gateway
-const startEdit = (gateway: PaymentGateway) => {
-  editingGateway.value = { ...gateway }
-}
-
-// Cancel editing
-const cancelEdit = () => {
-  editingGateway.value = null
-}
-
-// Save gateway configuration
-const saveGateway = async () => {
-  if (!editingGateway.value) return
-
-  isSaving.value = true
+  testingConnection.value = true;
+  testResult.value = null;
 
   try {
-    await router.put(
-      route('admin.payment-gateways.update', editingGateway.value.id),
-      editingGateway.value,
+    const response = await fetch(
+      `/admin/payment-gateways/${selectedGateway.value.id}/test`,
       {
-        preserveScroll: true,
-        onSuccess: () => {
-          toast({
-            title: 'Success',
-            description: 'Payment gateway configuration saved successfully.',
-          })
-          editingGateway.value = null
-        },
-        onError: (errors) => {
-          toast({
-            title: 'Error',
-            description: Object.values(errors)[0] as string,
-            variant: 'destructive',
-          })
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '',
         },
       }
-    )
-  } finally {
-    isSaving.value = false
-  }
-}
+    );
 
-// Test gateway connection
-const testConnection = async (gatewayId: number) => {
-  isTestingConnection.value = true
-
-  try {
-    await router.post(
-      route('admin.payment-gateways.test', gatewayId),
-      {},
-      {
-        preserveScroll: true,
-        onSuccess: (page) => {
-          const result = page.props.testResult as { success: boolean; message: string }
-          toast({
-            title: result.success ? 'Connection Successful' : 'Connection Failed',
-            description: result.message,
-            variant: result.success ? 'default' : 'destructive',
-          })
-        },
-      }
-    )
-  } finally {
-    isTestingConnection.value = false
-  }
-}
-
-// Toggle gateway active status
-const toggleGatewayStatus = async (gateway: PaymentGateway) => {
-  try {
-    await router.post(
-      route('admin.payment-gateways.toggle-status', gateway.id),
-      {},
-      {
-        preserveScroll: true,
-        onSuccess: () => {
-          toast({
-            title: 'Success',
-            description: `${gateway.name} ${!gateway.is_active ? 'activated' : 'deactivated'} successfully.`,
-          })
-        },
-      }
-    )
+    const data = await response.json();
+    testResult.value = data;
   } catch (error) {
-    toast({
-      title: 'Error',
-      description: 'Failed to update gateway status.',
-      variant: 'destructive',
-    })
+    testResult.value = {
+      success: false,
+      message: 'Connection test failed',
+    };
+  } finally {
+    testingConnection.value = false;
   }
-}
+};
 
-// Format currency
-const formatCurrency = (amount: number) => {
-  return new Intl.NumberFormat('en-PH', {
-    style: 'currency',
-    currency: 'PHP',
-  }).format(amount)
-}
+const toggleGateway = (gateway: PaymentGateway) => {
+  router.post(`/admin/payment-gateways/${gateway.id}/toggle`, {}, {
+    preserveScroll: true,
+  });
+};
 
-// Format date
-const formatDate = (date: string) => {
-  return new Date(date).toLocaleDateString('en-PH', {
-    year: 'numeric',
-    month: 'short',
-    day: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  })
-}
+const getStatusColor = (isActive: boolean) => {
+  return isActive ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800';
+};
 
-// Mask secret key
-const maskSecret = (secret: string | undefined, visible: boolean): string => {
-  if (!secret) return 'Not configured'
-  if (visible) return secret
-  return '•'.repeat(Math.min(secret.length, 32))
-}
+const hasRequiredKeys = (gateway: PaymentGateway) => {
+  if (gateway.slug === 'paymongo') {
+    return !!(gateway.config.public_key && gateway.config.secret_key);
+  }
+  return !!gateway.config.api_key;
+};
+
+const getWebhookUrl = (gateway: PaymentGateway) => {
+  const baseUrl = window.location.origin;
+  return `${baseUrl}/webhooks/${gateway.slug}`;
+};
 </script>
 
 <template>
-  <AppLayout>
-    <Head title="Payment Gateways" />
+  <Head title="Payment Gateways" />
 
-    <div class="space-y-6">
-      <!-- Header -->
-      <div>
-        <h1 class="text-3xl font-bold tracking-tight">Payment Gateways</h1>
-        <p class="text-muted-foreground">
-          Configure and manage online payment gateway integrations
-        </p>
+  <AuthenticatedLayout>
+    <template #header>
+      <div class="flex items-center justify-between">
+        <h2 class="text-xl font-semibold leading-tight text-gray-800 dark:text-gray-200">
+          Payment Gateways
+        </h2>
       </div>
+    </template>
 
-      <!-- Stats Overview -->
-      <div class="grid gap-4 md:grid-cols-4">
-        <Card>
-          <CardHeader class="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle class="text-sm font-medium">Active Gateways</CardTitle>
-            <CheckCircle2 class="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div class="text-2xl font-bold">{{ props.stats.total_active }}</div>
-            <p class="text-xs text-muted-foreground">
-              out of {{ props.gateways.length }} total
-            </p>
-          </CardContent>
-        </Card>
+    <div class="py-12">
+      <div class="mx-auto max-w-7xl sm:px-6 lg:px-8">
+        <!-- Info Alert -->
+        <div class="mb-6 rounded-lg border border-blue-200 bg-blue-50 p-4 dark:border-blue-800 dark:bg-blue-900/20">
+          <div class="flex">
+            <div class="flex-shrink-0">
+              <svg class="h-5 w-5 text-blue-400" viewBox="0 0 20 20" fill="currentColor">
+                <path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clip-rule="evenodd" />
+              </svg>
+            </div>
+            <div class="ml-3">
+              <h3 class="text-sm font-medium text-blue-800 dark:text-blue-200">
+                Configure Payment Gateways
+              </h3>
+              <div class="mt-2 text-sm text-blue-700 dark:text-blue-300">
+                <ul class="list-disc space-y-1 pl-5">
+                  <li>Configure API credentials for each gateway before enabling</li>
+                  <li>Test the connection after configuration</li>
+                  <li>Add webhook URLs to your gateway dashboard</li>
+                  <li>Start with sandbox mode for testing</li>
+                </ul>
+              </div>
+            </div>
+          </div>
+        </div>
 
-        <Card>
-          <CardHeader class="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle class="text-sm font-medium">Transactions Today</CardTitle>
-            <CreditCard class="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div class="text-2xl font-bold">{{ props.stats.total_transactions_today }}</div>
-            <p class="text-xs text-muted-foreground">
-              {{ formatCurrency(props.stats.total_amount_today) }}
-            </p>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader class="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle class="text-sm font-medium">Success Rate</CardTitle>
-            <RefreshCw class="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div class="text-2xl font-bold">{{ props.stats.success_rate.toFixed(1) }}%</div>
-            <p class="text-xs text-muted-foreground">Last 30 days</p>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader class="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle class="text-sm font-medium">System Status</CardTitle>
-            <Settings class="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div class="text-2xl font-bold text-green-600">Operational</div>
-            <p class="text-xs text-muted-foreground">All systems normal</p>
-          </CardContent>
-        </Card>
-      </div>
-
-      <!-- Alert for sandbox mode -->
-      <Alert v-if="props.gateways.some(g => g.is_active && g.is_sandbox)">
-        <AlertCircle class="h-4 w-4" />
-        <AlertDescription>
-          <strong>Warning:</strong> Some gateways are running in sandbox mode. Real transactions will not be processed.
-        </AlertDescription>
-      </Alert>
-
-      <!-- Gateways List -->
-      <div class="grid gap-6 md:grid-cols-2">
-        <Card v-for="gateway in props.gateways" :key="gateway.id">
-          <CardHeader>
-            <div class="flex items-start justify-between">
-              <div class="flex items-center gap-3">
-                <div class="rounded-lg bg-primary/10 p-2">
-                  <component :is="getGatewayIcon(gateway.slug)" class="h-6 w-6 text-primary" />
-                </div>
-                <div>
-                  <CardTitle class="flex items-center gap-2">
-                    {{ gateway.name }}
-                    <Badge :variant="getStatusVariant(gateway.is_active)">
+        <!-- Payment Gateways Grid -->
+        <div class="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
+          <div
+            v-for="gateway in gateways"
+            :key="gateway.id"
+            class="overflow-hidden rounded-lg bg-white shadow dark:bg-gray-800"
+          >
+            <!-- Header -->
+            <div class="border-b border-gray-200 bg-gray-50 p-6 dark:border-gray-700 dark:bg-gray-900">
+              <div class="flex items-start justify-between">
+                <div class="flex items-center space-x-3">
+                  <div class="flex h-12 w-12 items-center justify-center rounded-lg bg-white shadow-sm">
+                    <span class="text-2xl font-bold text-gray-700">
+                      {{ gateway.name.charAt(0) }}
+                    </span>
+                  </div>
+                  <div>
+                    <h3 class="text-lg font-semibold text-gray-900 dark:text-white">
+                      {{ gateway.name }}
+                    </h3>
+                    <span
+                      :class="getStatusColor(gateway.is_active)"
+                      class="mt-1 inline-flex rounded-full px-2 py-1 text-xs font-semibold"
+                    >
                       {{ gateway.is_active ? 'Active' : 'Inactive' }}
-                    </Badge>
-                    <Badge v-if="gateway.is_sandbox" variant="outline">Sandbox</Badge>
-                  </CardTitle>
-                  <CardDescription>
-                    {{ gateway.supported_methods.join(', ') }}
-                  </CardDescription>
+                    </span>
+                  </div>
                 </div>
-              </div>
-              <Switch
-                :checked="gateway.is_active"
-                @update:checked="toggleGatewayStatus(gateway)"
-              />
-            </div>
-          </CardHeader>
-
-          <CardContent class="space-y-4">
-            <!-- Usage Stats -->
-            <div class="grid grid-cols-2 gap-4 rounded-lg bg-muted/50 p-3">
-              <div>
-                <p class="text-xs text-muted-foreground">Total Transactions</p>
-                <p class="text-lg font-semibold">{{ gateway.total_transactions || 0 }}</p>
-              </div>
-              <div>
-                <p class="text-xs text-muted-foreground">Total Amount</p>
-                <p class="text-lg font-semibold">{{ formatCurrency(gateway.total_amount || 0) }}</p>
               </div>
             </div>
 
-            <!-- Configuration Form (when editing) -->
-            <div v-if="editingGateway?.id === gateway.id" class="space-y-4">
-              <Separator />
-              
-              <!-- Environment Toggle -->
-              <div class="flex items-center justify-between">
-                <Label>Sandbox Mode</Label>
-                <Switch v-model:checked="editingGateway.is_sandbox" />
-              </div>
+            <!-- Body -->
+            <div class="p-6">
+              <p class="mb-4 text-sm text-gray-600 dark:text-gray-400">
+                {{ gateway.description }}
+              </p>
 
-              <!-- Configuration Fields (PayMongo Example) -->
-              <div v-if="gateway.slug === 'paymongo'" class="space-y-4">
-                <div class="space-y-2">
-                  <Label>Public Key</Label>
-                  <div class="relative">
-                    <Input
-                      v-model="editingGateway.config.public_key"
-                      :type="isSecretVisible(String(gateway.id), 'public_key') ? 'text' : 'password'"
-                      placeholder="pk_test_..."
-                    />
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      class="absolute right-0 top-0 h-full"
-                      @click="toggleSecretVisibility(String(gateway.id), 'public_key')"
-                    >
-                      <Eye v-if="!isSecretVisible(String(gateway.id), 'public_key')" class="h-4 w-4" />
-                      <EyeOff v-else class="h-4 w-4" />
-                    </Button>
-                  </div>
+              <!-- Configuration Status -->
+              <div class="mb-4 space-y-2">
+                <div class="flex items-center justify-between text-sm">
+                  <span class="text-gray-600 dark:text-gray-400">Environment:</span>
+                  <span class="font-medium text-gray-900 dark:text-white">
+                    {{ gateway.config.environment || 'Not configured' }}
+                  </span>
                 </div>
-
-                <div class="space-y-2">
-                  <Label>Secret Key</Label>
-                  <div class="relative">
-                    <Input
-                      v-model="editingGateway.config.secret_key"
-                      :type="isSecretVisible(String(gateway.id), 'secret_key') ? 'text' : 'password'"
-                      placeholder="sk_test_..."
-                    />
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      class="absolute right-0 top-0 h-full"
-                      @click="toggleSecretVisibility(String(gateway.id), 'secret_key')"
-                    >
-                      <Eye v-if="!isSecretVisible(String(gateway.id), 'secret_key')" class="h-4 w-4" />
-                      <EyeOff v-else class="h-4 w-4" />
-                    </Button>
-                  </div>
-                </div>
-
-                <div class="space-y-2">
-                  <Label>Webhook Secret</Label>
-                  <div class="relative">
-                    <Input
-                      v-model="editingGateway.config.webhook_secret"
-                      :type="isSecretVisible(String(gateway.id), 'webhook_secret') ? 'text' : 'password'"
-                      placeholder="whsec_..."
-                    />
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      class="absolute right-0 top-0 h-full"
-                      @click="toggleSecretVisibility(String(gateway.id), 'webhook_secret')"
-                    >
-                      <Eye v-if="!isSecretVisible(String(gateway.id), 'webhook_secret')" class="h-4 w-4" />
-                      <EyeOff v-else class="h-4 w-4" />
-                    </Button>
-                  </div>
+                <div class="flex items-center justify-between text-sm">
+                  <span class="text-gray-600 dark:text-gray-400">API Keys:</span>
+                  <span :class="hasRequiredKeys(gateway) ? 'text-green-600' : 'text-red-600'" class="font-medium">
+                    {{ hasRequiredKeys(gateway) ? 'Configured' : 'Missing' }}
+                  </span>
                 </div>
               </div>
 
-              <!-- Fee Configuration -->
-              <Separator />
-              <div class="space-y-4">
-                <Label>Transaction Fee</Label>
-                <div class="grid grid-cols-2 gap-2">
-                  <div class="space-y-2">
-                    <Label class="text-xs">Type</Label>
+              <!-- Fees -->
+              <div class="mb-4 rounded-lg bg-gray-50 p-3 dark:bg-gray-900">
+                <div class="text-xs font-semibold uppercase text-gray-500 dark:text-gray-400">
+                  Transaction Fees
+                </div>
+                <div class="mt-2 text-sm text-gray-900 dark:text-white">
+                  {{ gateway.fees?.percentage || 0 }}% + ₱{{ gateway.fees?.fixed || 0 }}
+                </div>
+              </div>
+
+              <!-- Supported Methods -->
+              <div class="mb-4">
+                <div class="text-xs font-semibold uppercase text-gray-500 dark:text-gray-400">
+                  Payment Methods
+                </div>
+                <div class="mt-2 flex flex-wrap gap-2">
+                  <span
+                    v-for="method in gateway.supported_methods"
+                    :key="method"
+                    class="inline-flex rounded-md bg-blue-100 px-2 py-1 text-xs font-medium text-blue-800 dark:bg-blue-900 dark:text-blue-200"
+                  >
+                    {{ method }}
+                  </span>
+                </div>
+              </div>
+
+              <!-- Webhook URL -->
+              <div class="mb-4">
+                <div class="text-xs font-semibold uppercase text-gray-500 dark:text-gray-400">
+                  Webhook URL
+                </div>
+                <div class="mt-1 flex items-center gap-2">
+                  <input
+                    type="text"
+                    :value="getWebhookUrl(gateway)"
+                    readonly
+                    class="flex-1 rounded border border-gray-300 bg-gray-50 px-2 py-1 text-xs text-gray-600 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-400"
+                  />
+                  <button
+                    @click="navigator.clipboard.writeText(getWebhookUrl(gateway))"
+                    class="rounded bg-gray-200 px-2 py-1 text-xs hover:bg-gray-300 dark:bg-gray-700 dark:hover:bg-gray-600"
+                    title="Copy"
+                  >
+                    📋
+                  </button>
+                </div>
+              </div>
+
+              <!-- Actions -->
+              <div class="flex gap-2">
+                <button
+                  @click="openConfigModal(gateway)"
+                  class="flex-1 rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                  Configure
+                </button>
+                <button
+                  @click="toggleGateway(gateway)"
+                  :disabled="!hasRequiredKeys(gateway)"
+                  :class="[
+                    gateway.is_active
+                      ? 'bg-red-600 hover:bg-red-700 focus:ring-red-500'
+                      : 'bg-green-600 hover:bg-green-700 focus:ring-green-500',
+                    !hasRequiredKeys(gateway) && 'opacity-50 cursor-not-allowed'
+                  ]"
+                  class="flex-1 rounded-md px-4 py-2 text-sm font-medium text-white focus:outline-none focus:ring-2"
+                >
+                  {{ gateway.is_active ? 'Disable' : 'Enable' }}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Configuration Modal -->
+    <div
+      v-if="showConfigModal && selectedGateway"
+      class="fixed inset-0 z-50 overflow-y-auto"
+      aria-labelledby="modal-title"
+      role="dialog"
+      aria-modal="true"
+    >
+      <div class="flex min-h-screen items-end justify-center px-4 pb-20 pt-4 text-center sm:block sm:p-0">
+        <div
+          class="fixed inset-0 bg-gray-500 bg-opacity-75 transition-opacity"
+          aria-hidden="true"
+          @click="closeConfigModal"
+        ></div>
+
+        <span class="hidden sm:inline-block sm:h-screen sm:align-middle" aria-hidden="true">&#8203;</span>
+
+        <div class="inline-block transform overflow-hidden rounded-lg bg-white text-left align-bottom shadow-xl transition-all dark:bg-gray-800 sm:my-8 sm:w-full sm:max-w-2xl sm:align-middle">
+          <div class="bg-white px-4 pb-4 pt-5 dark:bg-gray-800 sm:p-6 sm:pb-4">
+            <div class="sm:flex sm:items-start">
+              <div class="mt-3 w-full text-center sm:ml-4 sm:mt-0 sm:text-left">
+                <h3 class="text-lg font-medium leading-6 text-gray-900 dark:text-white" id="modal-title">
+                  Configure {{ selectedGateway.name }}
+                </h3>
+                <div class="mt-4 space-y-4">
+                  <!-- Environment -->
+                  <div>
+                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">
+                      Environment
+                    </label>
                     <select
-                      v-model="editingGateway.fees.type"
-                      class="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                      v-model="configForm.environment"
+                      class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-700 dark:text-white sm:text-sm"
                     >
-                      <option value="percentage">Percentage</option>
-                      <option value="fixed">Fixed Amount</option>
+                      <option value="sandbox">Sandbox (Testing)</option>
+                      <option value="production">Production (Live)</option>
                     </select>
                   </div>
-                  <div class="space-y-2">
-                    <Label class="text-xs">Amount</Label>
-                    <Input
-                      v-model.number="editingGateway.fees.amount"
-                      type="number"
-                      step="0.01"
-                      :placeholder="editingGateway.fees.type === 'percentage' ? '2.5' : '10.00'"
-                    />
+
+                  <!-- PayMongo Fields -->
+                  <template v-if="selectedGateway.slug === 'paymongo'">
+                    <div>
+                      <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">
+                        Public Key
+                      </label>
+                      <input
+                        v-model="configForm.public_key"
+                        type="text"
+                        placeholder="pk_test_..."
+                        class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-700 dark:text-white sm:text-sm"
+                      />
+                    </div>
+                    <div>
+                      <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">
+                        Secret Key
+                      </label>
+                      <input
+                        v-model="configForm.secret_key"
+                        type="password"
+                        placeholder="sk_test_..."
+                        class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-700 dark:text-white sm:text-sm"
+                      />
+                    </div>
+                    <div>
+                      <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">
+                        Webhook Secret
+                      </label>
+                      <input
+                        v-model="configForm.webhook_secret"
+                        type="password"
+                        placeholder="whsec_..."
+                        class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-700 dark:text-white sm:text-sm"
+                      />
+                    </div>
+                  </template>
+
+                  <!-- Other Gateways -->
+                  <template v-else>
+                    <div>
+                      <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">
+                        API Key
+                      </label>
+                      <input
+                        v-model="configForm.api_key"
+                        type="password"
+                        placeholder="Enter API key"
+                        class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-700 dark:text-white sm:text-sm"
+                      />
+                    </div>
+                  </template>
+
+                  <!-- Fees -->
+                  <div class="grid grid-cols-2 gap-4">
+                    <div>
+                      <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">
+                        Percentage Fee (%)
+                      </label>
+                      <input
+                        v-model.number="configForm.percentage_fee"
+                        type="number"
+                        step="0.1"
+                        min="0"
+                        class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-700 dark:text-white sm:text-sm"
+                      />
+                    </div>
+                    <div>
+                      <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">
+                        Fixed Fee (₱)
+                      </label>
+                      <input
+                        v-model.number="configForm.fixed_fee"
+                        type="number"
+                        step="0.01"
+                        min="0"
+                        class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-700 dark:text-white sm:text-sm"
+                      />
+                    </div>
+                  </div>
+
+                  <!-- Test Connection -->
+                  <div>
+                    <button
+                      @click="testConnection"
+                      :disabled="testingConnection"
+                      class="w-full rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-300 dark:hover:bg-gray-600"
+                    >
+                      {{ testingConnection ? 'Testing...' : 'Test Connection' }}
+                    </button>
+                    <div v-if="testResult" class="mt-2">
+                      <div
+                        :class="[
+                          'rounded-md p-3 text-sm',
+                          testResult.success
+                            ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200'
+                            : 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200'
+                        ]"
+                      >
+                        {{ testResult.message }}
+                      </div>
+                    </div>
                   </div>
                 </div>
-                <p class="text-xs text-muted-foreground">
-                  {{ editingGateway.fees.type === 'percentage' ? 
-                    `${editingGateway.fees.amount}% of transaction amount` : 
-                    `₱${editingGateway.fees.amount.toFixed(2)} per transaction` 
-                  }}
-                </p>
-              </div>
-
-              <!-- Action Buttons -->
-              <div class="flex gap-2">
-                <Button @click="saveGateway" :disabled="isSaving" class="flex-1">
-                  <Save class="mr-2 h-4 w-4" />
-                  {{ isSaving ? 'Saving...' : 'Save Changes' }}
-                </Button>
-                <Button variant="outline" @click="cancelEdit">Cancel</Button>
               </div>
             </div>
-
-            <!-- View Mode Actions -->
-            <div v-else class="flex gap-2">
-              <Button variant="outline" class="flex-1" @click="startEdit(gateway)">
-                <Settings class="mr-2 h-4 w-4" />
-                Configure
-              </Button>
-              <Button
-                variant="outline"
-                @click="testConnection(gateway.id)"
-                :disabled="isTestingConnection || !gateway.is_active"
-              >
-                <RefreshCw
-                  :class="['h-4 w-4', isTestingConnection && 'animate-spin']"
-                />
-              </Button>
-            </div>
-
-            <!-- Last Used Info -->
-            <div v-if="gateway.last_used_at" class="text-xs text-muted-foreground">
-              Last used: {{ formatDate(gateway.last_used_at) }}
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-
-      <!-- Documentation Link -->
-      <Card>
-        <CardHeader>
-          <CardTitle>Need Help?</CardTitle>
-          <CardDescription>
-            Learn how to configure payment gateways and handle webhooks
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div class="flex gap-4">
-            <Button variant="outline" as="a" href="/docs/payment-gateways" target="_blank">
-              View Documentation
-            </Button>
-            <Button variant="outline" as="a" href="/docs/webhooks" target="_blank">
-              Webhook Guide
-            </Button>
           </div>
-        </CardContent>
-      </Card>
+          <div class="bg-gray-50 px-4 py-3 dark:bg-gray-900 sm:flex sm:flex-row-reverse sm:px-6">
+            <button
+              @click="saveConfiguration"
+              type="button"
+              class="inline-flex w-full justify-center rounded-md border border-transparent bg-blue-600 px-4 py-2 text-base font-medium text-white shadow-sm hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 sm:ml-3 sm:w-auto sm:text-sm"
+            >
+              Save Configuration
+            </button>
+            <button
+              @click="closeConfigModal"
+              type="button"
+              class="mt-3 inline-flex w-full justify-center rounded-md border border-gray-300 bg-white px-4 py-2 text-base font-medium text-gray-700 shadow-sm hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700 sm:ml-3 sm:mt-0 sm:w-auto sm:text-sm"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      </div>
     </div>
-  </AppLayout>
+  </AuthenticatedLayout>
 </template>
