@@ -19,6 +19,12 @@ use Inertia\Inertia;
 use App\Http\Controllers\CurriculaController;
 use App\Http\Controllers\WebhookController;
 use App\Http\Controllers\StudentPaymentController;
+use App\Http\Controllers\PaymentGateways\GCashPaymentController;
+use App\Http\Controllers\PaymentGateways\MayaPaymentController;
+use App\Http\Controllers\PaymentGateways\BankTransferController;
+use App\Models\OfficialReceipt;
+use App\Http\Controllers\FeeManagementController;
+use App\Http\Controllers\StudentArchiveController;
 
 // ============================================
 // PUBLIC ROUTES
@@ -269,6 +275,19 @@ Route::middleware(['auth', 'verified', 'role:admin'])->prefix('admin')->group(fu
         ->name('admin.payment-gateways.toggle');
     Route::post('/payment-gateways/{gateway}/test', [App\Http\Controllers\Admin\PaymentGatewayController::class, 'test'])
         ->name('admin.payment-gateways.test');
+});
+
+Route::middleware(['auth', 'verified', 'role:student'])->prefix('payment')->group(function () {
+    Route::get('/select-method', [PaymentController::class, 'selectMethod'])
+        ->name('payment.select-method');
+    
+    // Future routes for each gateway
+    Route::get('/gcash', [GCashPaymentController::class, 'create'])
+        ->name('payment.gcash.create');
+    Route::get('/maya', [MayaPaymentController::class, 'create'])
+        ->name('payment.maya.create');
+    Route::get('/bank', [BankTransferController::class, 'create'])
+        ->name('payment.bank.create');
 });
 
 // ============================================

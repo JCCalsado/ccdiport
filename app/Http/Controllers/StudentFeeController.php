@@ -23,6 +23,7 @@ use App\Services\AssessmentDataService;
 use App\Services\StudentCreationService;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\Log;
+use App\Models\OfficialReceipt;
 
 class StudentFeeController extends Controller
 {
@@ -339,12 +340,21 @@ class StudentFeeController extends Controller
                 ],
             ]);
 
+            $receipt = OfficialReceipt::create([
+                'account_id' => $student->account_id,
+                'payment_id' => $payment->id,
+                'receipt_number' => OfficialReceipt::generateReceiptNumber(),
+                'amount' => $validated['amount'],
+                'issued_at' => now(),
+                'issued_by' => auth()->id(),
+            ]);
+
             // Recalculate balance
             \App\Services\AccountService::recalculate($student->user);
 
             DB::commit();
 
-            return back()->with('success', 'Payment recorded successfully!');
+            return back()->with('success', 'Payment recorded. OR #' . $receipt->receipt_number);
 
         } catch (\Exception $e) {
             DB::rollBack();
