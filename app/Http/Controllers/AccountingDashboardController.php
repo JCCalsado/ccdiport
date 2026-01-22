@@ -15,35 +15,52 @@ class AccountingDashboardController extends Controller
 {
     public function index(Request $request)
     {
-        // ✅ Get overview stats using account_id
+        // ============================================
+        // OVERVIEW STATISTICS
+        // ============================================
+        
         $totalStudents = Student::whereNotNull('account_id')->count();
         $activeStudents = Student::whereNotNull('account_id')
             ->where('status', 'enrolled')
             ->count();
         
-        // ✅ Financial stats using account_id
+        // ============================================
+        // FINANCIAL STATISTICS
+        // ============================================
+        
         $totalOutstanding = DB::table('students')
             ->whereNotNull('account_id')
             ->sum('total_balance');
         
-        $recentPayments = Payment::whereNotNull('account_id')
+        $recentPayments30d = Payment::whereNotNull('account_id')
             ->where('created_at', '>=', now()->subDays(30))
             ->where('status', Payment::STATUS_COMPLETED)
             ->sum('amount');
         
-        // ✅ Pending charges by account_id
+        $todayPayments = Payment::whereNotNull('account_id')
+            ->whereDate('created_at', today())
+            ->where('status', Payment::STATUS_COMPLETED)
+            ->sum('amount');
+        
         $pendingCharges = Transaction::whereNotNull('account_id')
             ->where('kind', 'charge')
             ->where('status', 'pending')
             ->sum('amount');
         
-        // ✅ Recent transactions with student info
+        $totalRevenue = Payment::whereNotNull('account_id')
+            ->where('status', Payment::STATUS_COMPLETED)
+            ->sum('amount');
+        
+        // ============================================
+        // RECENT TRANSACTIONS
+        // ============================================
+        
         $recentTransactions = Transaction::with(['student' => function($query) {
                 $query->select('id', 'account_id', 'student_id', 'first_name', 'last_name', 'middle_initial');
             }])
             ->whereNotNull('account_id')
             ->latest('created_at')
-            ->take(10)
+            ->take(15)
             ->get()
             ->map(function ($txn) {
                 return [
@@ -63,7 +80,10 @@ class AccountingDashboardController extends Controller
                 ];
             });
         
-        // ✅ Students with overdue payments
+        // ============================================
+        // STUDENTS WITH OVERDUE PAYMENTS
+        // ============================================
+        
         $overdueStudents = Student::whereNotNull('account_id')
             ->whereHas('paymentTerms', function($query) {
                 $query->where('due_date', '<', now())
@@ -81,6 +101,9 @@ class AccountingDashboardController extends Controller
             ->map(function ($student) {
                 $overdueTerms = $student->paymentTerms;
                 $totalOverdue = $overdueTerms->sum(fn($term) => $term->amount - $term->paid_amount);
+                $daysPastDue = $overdueTerms->first() 
+                    ? now()->diffInDays($overdueTerms->first()->due_date) 
+                    : 0;
                 
                 return [
                     'account_id' => $student->account_id,
@@ -91,10 +114,14 @@ class AccountingDashboardController extends Controller
                     'total_overdue' => (float) $totalOverdue,
                     'overdue_terms_count' => $overdueTerms->count(),
                     'oldest_due_date' => $overdueTerms->first()?->due_date?->format('Y-m-d'),
+                    'days_past_due' => $daysPastDue,
                 ];
             });
         
-        // ✅ Recent assessments with account_id
+        // ============================================
+        // RECENT ASSESSMENTS
+        // ============================================
+        
         $recentAssessments = StudentAssessment::with(['student' => function($query) {
                 $query->select('id', 'account_id', 'student_id', 'first_name', 'last_name', 'middle_initial');
             }, 'curriculum.program'])
@@ -123,7 +150,10 @@ class AccountingDashboardController extends Controller
                 ];
             });
 
-        // ✅ NEW: Payment breakdown by method
+        // ============================================
+        // PAYMENT BREAKDOWN BY METHOD (Last 30 days)
+        // ============================================
+        
         $paymentByMethod = Payment::whereNotNull('account_id')
             ->where('status', Payment::STATUS_COMPLETED)
             ->where('created_at', '>=', now()->subDays(30))
@@ -132,13 +162,16 @@ class AccountingDashboardController extends Controller
             ->get()
             ->map(function ($item) {
                 return [
-                    'method' => $item->payment_method,
+                    'method' => ucfirst(str_replace('_', ' ', $item->payment_method)),
                     'count' => $item->count,
                     'total' => (float) $item->total,
                 ];
             });
 
-        // ✅ NEW: Students by year level
+        // ============================================
+        // STUDENTS BY YEAR LEVEL
+        // ============================================
+        
         $studentsByYearLevel = Student::whereNotNull('account_id')
             ->where('status', 'enrolled')
             ->select('year_level', DB::raw('COUNT(*) as count'))
@@ -151,7 +184,10 @@ class AccountingDashboardController extends Controller
                 ];
             });
 
-        // ✅ NEW: Current term
+        // ============================================
+        // CURRENT TERM
+        // ============================================
+        
         $currentYear = now()->year;
         $currentMonth = now()->month;
         $currentSemester = match(true) {
@@ -168,7 +204,10 @@ class AccountingDashboardController extends Controller
                 : ($currentYear - 1) . "-{$currentYear}",
         ];
 
-        // ✅ NEW: Students with balance (outstanding)
+        // ============================================
+        // STUDENTS WITH OUTSTANDING BALANCE
+        // ============================================
+        
         $studentsWithBalance = Student::whereNotNull('account_id')
             ->where('status', 'enrolled')
             ->where('total_balance', '>', 0)
@@ -186,7 +225,10 @@ class AccountingDashboardController extends Controller
                 ];
             });
 
-        // ✅ NEW: Recent payments (detailed list)
+        // ============================================
+        // RECENT PAYMENTS (Detailed list)
+        // ============================================
+        
         $recentPaymentsList = Payment::with(['studentByAccount' => function($query) {
                 $query->select('id', 'account_id', 'student_id', 'first_name', 'last_name', 'middle_initial');
             }])
@@ -212,7 +254,10 @@ class AccountingDashboardController extends Controller
                 ];
             });
 
-        // ✅ NEW: Payment trends (last 7 days)
+        // ============================================
+        // PAYMENT TRENDS (Last 7 days)
+        // ============================================
+        
         $paymentTrends = [];
         for ($i = 6; $i >= 0; $i--) {
             $date = now()->subDays($i);
@@ -221,21 +266,65 @@ class AccountingDashboardController extends Controller
                 ->whereDate('paid_at', $date)
                 ->sum('amount');
             
+            $dailyCount = Payment::whereNotNull('account_id')
+                ->where('status', Payment::STATUS_COMPLETED)
+                ->whereDate('paid_at', $date)
+                ->count();
+            
             $paymentTrends[] = [
                 'date' => $date->format('Y-m-d'),
                 'day' => $date->format('D'),
+                'day_full' => $date->format('l'),
                 'total' => (float) $dailyTotal,
+                'count' => $dailyCount,
             ];
         }
+
+        // ============================================
+        // COLLECTION EFFICIENCY (Current Month)
+        // ============================================
+        
+        $currentMonthStart = now()->startOfMonth();
+        $currentMonthEnd = now()->endOfMonth();
+        
+        $expectedCollection = StudentPaymentTerm::whereNotNull('account_id')
+            ->whereBetween('due_date', [$currentMonthStart, $currentMonthEnd])
+            ->sum('amount');
+        
+        $actualCollection = Payment::whereNotNull('account_id')
+            ->where('status', Payment::STATUS_COMPLETED)
+            ->whereBetween('paid_at', [$currentMonthStart, $currentMonthEnd])
+            ->sum('amount');
+        
+        $collectionRate = $expectedCollection > 0 
+            ? round(($actualCollection / $expectedCollection) * 100, 2) 
+            : 0;
+
+        // ============================================
+        // PENDING ASSESSMENT COUNT
+        // ============================================
+        
+        $pendingAssessments = StudentAssessment::whereNotNull('account_id')
+            ->where('status', 'active')
+            ->whereHas('student', function($query) {
+                $query->where('status', 'enrolled');
+            })
+            ->count();
         
         return Inertia::render('Accounting/Dashboard', [
             'stats' => [
                 'total_students' => $totalStudents,
                 'active_students' => $activeStudents,
                 'total_outstanding' => (float) $totalOutstanding,
-                'recent_payments_30d' => (float) $recentPayments,
+                'recent_payments_30d' => (float) $recentPayments30d,
+                'today_payments' => (float) $todayPayments,
                 'pending_charges' => (float) $pendingCharges,
+                'total_revenue' => (float) $totalRevenue,
                 'overdue_count' => $overdueStudents->count(),
+                'pending_assessments' => $pendingAssessments,
+                'collection_rate' => (float) $collectionRate,
+                'expected_collection' => (float) $expectedCollection,
+                'actual_collection' => (float) $actualCollection,
             ],
             'recentTransactions' => $recentTransactions,
             'overdueStudents' => $overdueStudents,
@@ -243,9 +332,9 @@ class AccountingDashboardController extends Controller
             'paymentByMethod' => $paymentByMethod,
             'studentsByYearLevel' => $studentsByYearLevel,
             'currentTerm' => $currentTerm,
-            'studentsWithBalance' => $studentsWithBalance, // ✅ ALREADY CORRECT (line 115)
-            'recentPayments' => $recentPaymentsList,       // ❌ FIX: Changed from $recentPaymentsList
-            'paymentTrends' => $paymentTrends,             // ✅ ALREADY CORRECT (line 117)
+            'studentsWithBalance' => $studentsWithBalance,
+            'recentPayments' => $recentPaymentsList,
+            'paymentTrends' => $paymentTrends,
         ]);
     }
 }

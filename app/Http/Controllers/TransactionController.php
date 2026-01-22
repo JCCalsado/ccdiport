@@ -14,22 +14,21 @@ use Illuminate\Support\Facades\Log;
 
 class TransactionController extends Controller
 {
+    /**
+     * ✅ Enhanced index with filtering and grouping
+     */
     public function index(Request $request)
     {
         $user = $request->user();
-    
-        // ✅ Get role value (handles both string and enum)
+        
+        // Get role value
         $roleValue = is_object($user->role) ? $user->role->value : $user->role;
         $adminRoles = ['admin', 'accounting'];
         
+        // Base query
         if (in_array($roleValue, $adminRoles)) {
-            // ✅ Admin/Accounting: Get all transactions
-            $transactions = Transaction::with(['student', 'fee'])
-                ->orderByDesc('created_at')
-                ->get()
-                ->groupBy(fn($txn) => "{$txn->year} {$txn->semester}");
+            $query = Transaction::with(['student', 'fee']);
         } else {
-            // ✅ Student: Get only their transactions by account_id
             $student = Student::where('user_id', $user->id)->first();
             
             if (!$student || !$student->account_id) {
@@ -38,41 +37,98 @@ class TransactionController extends Controller
                 ]);
             }
 
-            $transactions = Transaction::byAccountId($student->account_id)
-                ->with('fee')
-                ->orderByDesc('created_at')
-                ->get()
-                ->groupBy(fn($txn) => "{$txn->year} {$txn->semester}");
+            $query = Transaction::byAccountId($student->account_id)->with('fee');
         }
 
+        // ✅ Apply filters
+        if ($request->filled('search')) {
+            $search = $request->search;
+            $query->where(function($q) use ($search) {
+                $q->where('reference', 'like', "%{$search}%")
+                  ->orWhere('type', 'like', "%{$search}%")
+                  ->orWhereHas('fee', function($fq) use ($search) {
+                      $fq->where('name', 'like', "%{$search}%");
+                  });
+            });
+        }
+
+        if ($request->filled('kind')) {
+            $query->where('kind', $request->kind);
+        }
+
+        if ($request->filled('status')) {
+            $query->where('status', $request->status);
+        }
+
+        if ($request->filled('type')) {
+            $query->where('type', $request->type);
+        }
+
+        if ($request->filled('year')) {
+            $query->where('year', $request->year);
+        }
+
+        if ($request->filled('semester')) {
+            $query->where('semester', $request->semester);
+        }
+
+        if ($request->filled('date_from')) {
+            $query->whereDate('created_at', '>=', $request->date_from);
+        }
+
+        if ($request->filled('date_to')) {
+            $query->whereDate('created_at', '<=', $request->date_to);
+        }
+
+        // ✅ Get transactions
+        $transactions = $query->orderByDesc('created_at')->get();
+
+        // ✅ Group by term (Year + Semester)
+        $transactionsByTerm = $transactions->groupBy(function($txn) {
+            return ($txn->year ?? 'Unknown') . ' ' . ($txn->semester ?? 'Unknown');
+        });
+
+        // ✅ Calculate summary stats
+        $totalCharges = $transactions->where('kind', 'charge')->sum('amount');
+        $totalPayments = $transactions->where('kind', 'payment')->where('status', 'paid')->sum('amount');
+        $pendingCharges = $transactions->where('kind', 'charge')->where('status', 'pending')->sum('amount');
+
+        // ✅ Get filter options
+        $years = Transaction::distinct()->pluck('year')->filter()->sort()->values();
+        $semesters = Transaction::distinct()->pluck('semester')->filter()->unique()->values();
+        $types = Transaction::distinct()->pluck('type')->filter()->unique()->values();
+
         return Inertia::render('Transactions/Index', [
-            'auth' => ['user' => $user],
-            'transactionsByTerm' => $transactions,
+            'transactionsByTerm' => $transactionsByTerm,
+            'transactions' => $transactions,
+            'filters' => $request->only([
+                'search', 'kind', 'status', 'type', 'year', 'semester', 'date_from', 'date_to'
+            ]),
+            'filterOptions' => [
+                'years' => $years,
+                'semesters' => $semesters,
+                'types' => $types,
+            ],
+            'stats' => [
+                'total_charges' => (float) $totalCharges,
+                'total_payments' => (float) $totalPayments,
+                'pending_charges' => (float) $pendingCharges,
+                'net_balance' => (float) ($totalCharges - $totalPayments),
+                'transaction_count' => $transactions->count(),
+            ],
             'account' => $user->account,
             'currentTerm' => $this->getCurrentTerm(),
         ]);
     }
 
-    private function getCurrentTerm(): string
-    {
-        $year = now()->year;
-        $month = now()->month;
-
-        $semester = match(true) {
-            $month >= 6 && $month <= 10 => '1st Sem',
-            $month >= 11 || $month <= 3 => '2nd Sem',
-            default => 'Summer',
-        };
-
-        return "{$year} {$semester}";
-    }
-
+    /**
+     * ✅ Show single transaction details
+     */
     public function show(Transaction $transaction)
     {
-        // ✅ Load relationships using account_id
         $transaction->load(['student', 'fee']);
 
-        // ✅ Authorization check
+        // Authorization check
         $user = request()->user();
         $roleValue = is_object($user->role) ? $user->role->value : $user->role;
         
@@ -91,6 +147,8 @@ class TransactionController extends Controller
                 'reference' => $transaction->reference,
                 'kind' => $transaction->kind,
                 'type' => $transaction->type,
+                'year' => $transaction->year,
+                'semester' => $transaction->semester,
                 'amount' => (float) $transaction->amount,
                 'status' => $transaction->status,
                 'payment_channel' => $transaction->payment_channel,
@@ -137,10 +195,10 @@ class TransactionController extends Controller
 
         DB::beginTransaction();
         try {
-            // ✅ Create payment transaction using account_id
+            // Create payment transaction
             $transaction = Transaction::create([
-                'account_id' => $student->account_id, // ✅ PRIMARY FIELD
-                'user_id' => $user->id, // Keep for compatibility
+                'account_id' => $student->account_id,
+                'user_id' => $user->id,
                 'reference' => 'PAY-' . Str::upper(Str::random(8)),
                 'kind' => 'payment',
                 'type' => 'Payment',
@@ -148,6 +206,8 @@ class TransactionController extends Controller
                 'status' => 'paid',
                 'payment_channel' => $validated['payment_method'],
                 'paid_at' => $validated['paid_at'] ?? now(),
+                'year' => now()->year,
+                'semester' => $this->getCurrentSemester(),
                 'meta' => [
                     'reference_number' => $validated['reference_number'] ?? null,
                     'description' => $validated['description'] ?? 'Student payment',
@@ -155,7 +215,7 @@ class TransactionController extends Controller
                 ],
             ]);
 
-            // ✅ Update payment term(s) using account_id
+            // Update payment terms
             if (isset($validated['term_id'])) {
                 $term = StudentPaymentTerm::findOrFail($validated['term_id']);
                 
@@ -199,7 +259,7 @@ class TransactionController extends Controller
                 }
             }
 
-            // ✅ Recalculate account balance
+            // Recalculate account balance
             \App\Services\AccountService::recalculate($user);
 
             DB::commit();
@@ -211,7 +271,7 @@ class TransactionController extends Controller
             ]);
 
             return redirect()
-                ->route('student.account')
+                ->route('transactions.index')
                 ->with('success', 'Payment recorded successfully.');
 
         } catch (\Exception $e) {
@@ -230,11 +290,11 @@ class TransactionController extends Controller
     }
 
     /**
-     * Download transactions PDF
+     * ✅ Download transactions PDF
      */
-    public function download()
+    public function download(Request $request)
     {
-        $user = request()->user();
+        $user = $request->user();
         $roleValue = is_object($user->role) ? $user->role->value : $user->role;
 
         if (in_array($roleValue, ['admin', 'accounting'])) {
@@ -260,5 +320,36 @@ class TransactionController extends Controller
         ]);
 
         return $pdf->download('transactions-' . now()->format('Y-m-d') . '.pdf');
+    }
+
+    /**
+     * Helper: Get current term
+     */
+    private function getCurrentTerm(): string
+    {
+        $year = now()->year;
+        $month = now()->month;
+
+        $semester = match(true) {
+            $month >= 6 && $month <= 10 => '1st Sem',
+            $month >= 11 || $month <= 3 => '2nd Sem',
+            default => 'Summer',
+        };
+
+        return "{$year} {$semester}";
+    }
+
+    /**
+     * Helper: Get current semester
+     */
+    private function getCurrentSemester(): string
+    {
+        $month = now()->month;
+
+        return match(true) {
+            $month >= 6 && $month <= 10 => '1st Sem',
+            $month >= 11 || $month <= 3 => '2nd Sem',
+            default => 'Summer',
+        };
     }
 }
