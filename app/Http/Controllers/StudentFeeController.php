@@ -154,6 +154,7 @@ class StudentFeeController extends Controller
     {
         $student = Student::where('account_id', $accountId)->firstOrFail();
 
+        // Get available subjects for this student
         $subjects = Subject::active()
             ->where('course', $student->course)
             ->where('year_level', $student->year_level)
@@ -171,6 +172,7 @@ class StudentFeeController extends Controller
                 ];
             });
 
+        // Get available fees
         $fees = Fee::active()
             ->whereIn('category', ['Laboratory', 'Library', 'Athletic', 'Miscellaneous'])
             ->get()
@@ -816,6 +818,7 @@ class StudentFeeController extends Controller
         ]);
 
         try {
+            // Get curriculum preview from service
             $preview = $this->assessmentGenerator->getCurriculumPreview(
                 $validated['program_id'],
                 $validated['year_level'],
@@ -826,20 +829,31 @@ class StudentFeeController extends Controller
             if (!$preview) {
                 return response()->json([
                     'error' => 'No curriculum found for the selected term.',
+                    'details' => [
+                        'program_id' => $validated['program_id'],
+                        'year_level' => $validated['year_level'],
+                        'semester' => $validated['semester'],
+                        'school_year' => $validated['school_year'],
+                    ]
                 ], 404);
             }
 
-            return response()->json(['curriculum' => $preview]);
+            // ✅ Return preview data
+            return response()->json([
+                'success' => true,
+                'curriculum' => $preview,
+            ]);
 
         } catch (\Exception $e) {
             Log::error('Curriculum preview failed', [
                 'request' => $validated,
                 'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
             ]);
 
             return response()->json([
                 'error' => 'Failed to load curriculum preview.',
-                'message' => $e->getMessage(),
+                'message' => config('app.debug') ? $e->getMessage() : 'An error occurred while loading the curriculum.',
             ], 500);
         }
     }

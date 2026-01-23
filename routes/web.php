@@ -86,37 +86,71 @@ Route::middleware(['auth', 'verified', 'role:admin,accounting'])->group(function
 // ============================================
 
 Route::middleware(['auth', 'verified', 'role:admin,accounting'])->prefix('student-fees')->group(function () {
+    
+    // ──────────────────────────────────────────
+    // SECTION 1: LIST & CREATE ROUTES
+    // ──────────────────────────────────────────
+    
     // List all students for fee management
-    Route::get('/', [StudentFeeController::class, 'index'])->name('student-fees.index');
+    Route::get('/', [StudentFeeController::class, 'index'])
+        ->name('student-fees.index');
 
     // ✅ CREATE NEW STUDENT (Primary Flow)
     Route::get('/create-student', [StudentFeeController::class, 'createStudent'])
         ->name('student-fees.create-student');
+    
     Route::post('/store-student', [StudentFeeController::class, 'storeStudent'])
         ->name('student-fees.store-student');
 
     // ✅ CREATE ASSESSMENT FOR EXISTING STUDENT
-    Route::get('/create', [StudentFeeController::class, 'create'])->name('student-fees.create');
-    Route::post('/', [StudentFeeController::class, 'store'])->name('student-fees.store');
+    Route::get('/create', [StudentFeeController::class, 'create'])
+        ->name('student-fees.create');
+    
+    Route::post('/', [StudentFeeController::class, 'store'])
+        ->name('student-fees.store');
 
-    // ✅ SHOW/EDIT/UPDATE ASSESSMENT BY account_id
-    Route::get('/{accountId}', [StudentFeeController::class, 'show'])->name('student-fees.show');
-    Route::get('/{accountId}/edit', [StudentFeeController::class, 'edit'])->name('student-fees.edit');
-    Route::put('/{accountId}', [StudentFeeController::class, 'update'])->name('student-fees.update');
-
-    // ✅ RECORD PAYMENT BY account_id
-    Route::post('/{accountId}/payments', [StudentFeeController::class, 'storePayment'])
-        ->name('student-fees.payments.store');
-
-    // ✅ EXPORT PDF BY account_id
-    Route::get('/{accountId}/export-pdf', [StudentFeeController::class, 'exportPdf'])
-        ->name('student-fees.export-pdf');
-
-    // ✅ CURRICULUM HELPERS
+    // ──────────────────────────────────────────
+    // SECTION 2: CURRICULUM HELPERS
+    // ⚠️  MUST come BEFORE /{accountId} routes
+    // ──────────────────────────────────────────
+    
+    // Get available terms for a program
     Route::get('/curriculum/terms/{program}', [StudentFeeController::class, 'getAvailableTerms'])
         ->name('student-fees.curriculum.terms');
+    
+    // ✅ CRITICAL: Get curriculum preview (POST to avoid caching)
     Route::post('/curriculum/preview', [StudentFeeController::class, 'getCurriculumPreview'])
         ->name('student-fees.curriculum.preview');
+
+    // ──────────────────────────────────────────
+    // SECTION 3: STUDENT-SPECIFIC ROUTES
+    // ⚠️  Wildcard {accountId} - MUST come LAST
+    // ──────────────────────────────────────────
+    
+    // Export PDF by account_id (BEFORE show to avoid conflict)
+    Route::get('/{accountId}/export-pdf', [StudentFeeController::class, 'exportPdf'])
+        ->name('student-fees.export-pdf')
+        ->where('accountId', 'ACC-\d{8}-\d{4}'); // Validate account_id format
+
+    // Edit assessment by account_id
+    Route::get('/{accountId}/edit', [StudentFeeController::class, 'edit'])
+        ->name('student-fees.edit')
+        ->where('accountId', 'ACC-\d{8}-\d{4}');
+
+    // Update assessment by account_id
+    Route::put('/{accountId}', [StudentFeeController::class, 'update'])
+        ->name('student-fees.update')
+        ->where('accountId', 'ACC-\d{8}-\d{4}');
+
+    // Record payment by account_id
+    Route::post('/{accountId}/payments', [StudentFeeController::class, 'storePayment'])
+        ->name('student-fees.payments.store')
+        ->where('accountId', 'ACC-\d{8}-\d{4}');
+
+    // Show assessment by account_id (LAST)
+    Route::get('/{accountId}', [StudentFeeController::class, 'show'])
+        ->name('student-fees.show')
+        ->where('accountId', 'ACC-\d{8}-\d{4}');
 });
 
 // ============================================

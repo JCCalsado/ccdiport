@@ -1,692 +1,754 @@
-<!-- resources/js/Pages/StudentFees/Create.vue -->
 <script setup lang="ts">
-import AppLayout from '@/layouts/AppLayout.vue';
-import Breadcrumbs from '@/components/Breadcrumbs.vue';
-import { Head, Link, useForm } from '@inertiajs/vue3';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Plus, Trash2, ArrowLeft, Search, User } from 'lucide-vue-next';
-import { computed, ref, watch } from 'vue';
+import { ref, computed, watch } from 'vue'
+import { useForm } from '@inertiajs/vue3'
+import AppShell from '@/components/AppShell.vue'
+import AppSidebar from '@/components/AppSidebar.vue'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Alert, AlertDescription } from '@/components/ui/alert'
+import { Separator } from '@/components/ui/separator'
+import { Checkbox } from '@/components/ui/checkbox'
+import { ScrollArea } from '@/components/ui/scroll-area'
+import { Badge } from '@/components/ui/badge'
+import { 
+  Search, 
+  User, 
+  BookOpen, 
+  Calculator, 
+  AlertCircle, 
+  CheckCircle,
+  FileText,
+  Plus,
+  Minus,
+  Eye,
+  Loader2
+} from 'lucide-vue-next'
 
 interface Student {
-    id: number;
-    student_id: string;
-    name: string;
-    email: string;
-    course: string;
-    year_level: string;
-    status: string;
+  id: number
+  account_id: string
+  student_id: string
+  name: string
+  email: string
+  course: string
+  year_level: string
 }
 
 interface Subject {
-    id: number;
-    code: string;
-    name: string;
-    units: number;
-    price_per_unit: number;
-    has_lab: boolean;
-    lab_fee: number;
-    total_cost: number;
+  id: number
+  code: string
+  name: string
+  units: number
+  price_per_unit: number
+  has_lab: boolean
+  lab_fee: number
+  total_cost: number
 }
 
 interface Fee {
-    id: number;
-    name: string;
-    category: string;
-    amount: number;
+  id: number
+  name: string
+  category: string
+  amount: number
 }
 
-interface SelectedSubject {
-    id: number;
-    units: number;
-    amount: number;
-}
-
-interface SelectedFee {
-    id: number;
-    amount: number;
+interface CurriculumPreview {
+  id: number
+  program: string
+  term: string
+  courses: Array<{
+    code: string
+    title: string
+    lec_units: number
+    lab_units: number
+    total_units: number
+    has_lab: boolean
+  }>
+  totals: {
+    tuition: number
+    lab_fees: number
+    registration_fee: number
+    misc_fee: number
+    total_assessment: number
+  }
 }
 
 interface Props {
-    students: Student[];
-    yearLevels: string[];
-    semesters: string[];
-    schoolYears: string[];
-    
-    subjects?: Subject[];
-    fees?: Fee[];
+  students: Student[]
+  yearLevels: string[]
+  semesters: string[]
+  schoolYears: string[]
+  programs?: Array<{
+    id: number
+    code: string
+    name: string
+    full_name: string
+  }>
 }
 
-const props = defineProps<Props>();
+const props = defineProps<Props>()
 
-const breadcrumbs = [
-    { title: 'Dashboard', href: route('dashboard') },
-    { title: 'Student Fee Management', href: route('student-fees.index') },
-    { title: 'Create Assessment' },
-];
+// ============================================
+// STATE MANAGEMENT
+// ============================================
+const selectedStudent = ref<Student | null>(null)
+const studentSearch = ref('')
+const availableSubjects = ref<Subject[]>([])
+const availableFees = ref<Fee[]>([])
+const loadingStudentData = ref(false)
+const showCurriculumPreview = ref(false)
+const curriculumPreview = ref<CurriculumPreview | null>(null)
+const loadingCurriculum = ref(false)
 
-// Step management
-const currentStep = ref<1 | 2>(1);
-const selectedStudent = ref<Student | null>(null);
-const studentSearch = ref('');
+// ============================================
+// FORM DATA
+// ============================================
+const form = useForm({
+  account_id: '',
+  year_level: '',
+  semester: '',
+  school_year: props.schoolYears[0] || '',
+  program_id: null as number | null,
+  use_curriculum: false,
+  subjects: [] as Array<{
+    id: number
+    code: string
+    name: string
+    units: number
+    amount: number
+    selected: boolean
+  }>,
+  other_fees: [] as Array<{
+    id: number
+    name: string
+    category: string
+    amount: number
+    selected: boolean
+  }>
+})
 
-// Available subjects and fees (loaded after student selection)
-const availableSubjects = ref<Subject[]>([]);
-const availableFees = ref<Fee[]>([]);
-const isLoadingData = ref(false);
-
-// Selected items
-const selectedSubjects = ref<SelectedSubject[]>([]);
-const selectedFees = ref<SelectedFee[]>([]);
-
-// Filter students based on search
+// ============================================
+// COMPUTED PROPERTIES
+// ============================================
 const filteredStudents = computed(() => {
-    if (!studentSearch.value) return props.students;
+  if (!studentSearch.value) return props.students
+  
+  const search = studentSearch.value.toLowerCase()
+  return props.students.filter(student => 
+    student.name.toLowerCase().includes(search) ||
+    student.student_id.toLowerCase().includes(search) ||
+    student.account_id.toLowerCase().includes(search) ||
+    student.email.toLowerCase().includes(search)
+  )
+})
+
+const selectedSubjects = computed(() => 
+  form.subjects.filter(s => s.selected)
+)
+
+const selectedFees = computed(() => 
+  form.other_fees.filter(f => f.selected)
+)
+
+const totalTuition = computed(() => 
+  selectedSubjects.value.reduce((sum, subject) => sum + subject.amount, 0)
+)
+
+const totalOtherFees = computed(() => 
+  selectedFees.value.reduce((sum, fee) => sum + fee.amount, 0)
+)
+
+const grandTotal = computed(() => 
+  totalTuition.value + totalOtherFees.value
+)
+
+const canSubmit = computed(() => 
+  form.account_id &&
+  form.year_level &&
+  form.semester &&
+  form.school_year &&
+  (
+    (form.use_curriculum && form.program_id && curriculumPreview.value) ||
+    (!form.use_curriculum && selectedSubjects.value.length > 0)
+  )
+)
+
+// ============================================
+// METHODS
+// ============================================
+async function selectStudent(student: Student) {
+  selectedStudent.value = student
+  form.account_id = student.account_id
+  form.year_level = student.year_level
+  
+  // Reset subjects and fees
+  form.subjects = []
+  form.other_fees = []
+  availableSubjects.value = []
+  availableFees.value = []
+  
+  // Load student data
+  await loadStudentData()
+}
+
+async function loadStudentData() {
+  if (!selectedStudent.value) return
+  
+  loadingStudentData.value = true
+  
+  try {
+    const response = await fetch(
+      route('student-fees.create', { 
+        get_data: true, 
+        account_id: selectedStudent.value.account_id 
+      })
+    )
     
-    const search = studentSearch.value.toLowerCase();
-    return props.students.filter(student => 
-        student.student_id.toLowerCase().includes(search) ||
-        student.name.toLowerCase().includes(search) ||
-        student.email.toLowerCase().includes(search) ||
-        student.course.toLowerCase().includes(search)
-    );
-});
-
-// Form for assessment data
-const form: any = useForm({
-    user_id: null,
-    year_level: '',
-    semester: '',
-    school_year: props.schoolYears[0] || '',
-    subjects: [],
-    other_fees: [],
-});
-
-// Calculate totals
-const tuitionTotal = computed(() => {
-    return selectedSubjects.value.reduce((sum, s) => {
-        const amount = s.amount || 0;
-        return sum + amount;
-    }, 0);
-});
-
-const otherFeesTotal = computed(() => {
-    return selectedFees.value.reduce((sum, f) => {
-        const amount = f.amount || 0;
-        return sum + amount;
-    }, 0);
-});
-
-const grandTotal = computed(() => {
-    return tuitionTotal.value + otherFeesTotal.value;
-});
-
-// Select student and move to next step
-const selectStudent = async (student: Student) => {
-    selectedStudent.value = student;
-    form.user_id = student.id;
-    form.year_level = student.year_level;
+    const data = await response.json()
     
-    // Load subjects and fees for this student
-    await loadStudentData(student);
+    availableSubjects.value = data.subjects
+    availableFees.value = data.fees
     
-    currentStep.value = 2;
-};
-
-// Load subjects and fees based on student
-const loadStudentData = async (student: Student) => {
-    isLoadingData.value = true;
+    // Populate form subjects
+    form.subjects = data.subjects.map((subject: Subject) => ({
+      id: subject.id,
+      code: subject.code,
+      name: subject.name,
+      units: subject.units,
+      amount: subject.total_cost,
+      selected: false
+    }))
     
-    try {
-        // In a real scenario, you'd make an API call here
-        // For now, we'll simulate it with a route call
-        const response = await fetch(route('student-fees.create', { 
-            student_id: student.id,
-            get_data: true 
-        }));
-        
-        if (response.ok) {
-            const data = await response.json();
-            availableSubjects.value = data.subjects || [];
-            availableFees.value = data.fees || [];
-        }
-    } catch (error) {
-        console.error('Failed to load student data:', error);
-    } finally {
-        isLoadingData.value = false;
+    // Populate form fees
+    form.other_fees = data.fees.map((fee: Fee) => ({
+      id: fee.id,
+      name: fee.name,
+      category: fee.category,
+      amount: fee.amount,
+      selected: false
+    }))
+  } catch (error) {
+    console.error('Failed to load student data:', error)
+  } finally {
+    loadingStudentData.value = false
+  }
+}
+
+async function loadCurriculumPreview() {
+  if (!form.program_id || !form.year_level || !form.semester || !form.school_year) {
+    return
+  }
+  
+  loadingCurriculum.value = true
+  curriculumPreview.value = null
+  
+  try {
+    const response = await fetch(route('student-fees.curriculum.preview'), {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '',
+      },
+      body: JSON.stringify({
+        program_id: form.program_id,
+        year_level: form.year_level,
+        semester: form.semester,
+        school_year: form.school_year,
+      })
+    })
+    
+    const data = await response.json()
+    
+    if (data.curriculum) {
+      curriculumPreview.value = data.curriculum
+      showCurriculumPreview.value = true
+    } else {
+      showCurriculumPreview.value = false
+      alert('No curriculum found for selected term. Please use manual assessment.')
+      form.use_curriculum = false
     }
-};
+  } catch (error) {
+    console.error('Failed to load curriculum:', error)
+    showCurriculumPreview.value = false
+    form.use_curriculum = false
+  } finally {
+    loadingCurriculum.value = false
+  }
+}
 
-// Go back to student selection
-const backToStudentSelection = () => {
-    currentStep.value = 1;
-    selectedStudent.value = null;
-    selectedSubjects.value = [];
-    selectedFees.value = [];
-    form.user_id = null;
-    form.year_level = '';
-};
+function toggleSubject(index: number) {
+  form.subjects[index].selected = !form.subjects[index].selected
+}
 
-// Subject management
-const addSubject = (subject: Subject) => {
-    const exists = selectedSubjects.value.find(s => s.id === subject.id);
-    if (!exists) {
-        selectedSubjects.value.push({
-            id: subject.id,
-            units: subject.units,
-            amount: parseFloat(String(subject.total_cost)) || 0,
-        });
+function toggleFee(index: number) {
+  form.other_fees[index].selected = !form.other_fees[index].selected
+}
+
+function selectAllSubjects() {
+  form.subjects.forEach(subject => subject.selected = true)
+}
+
+function deselectAllSubjects() {
+  form.subjects.forEach(subject => subject.selected = false)
+}
+
+function selectAllFees() {
+  form.other_fees.forEach(fee => fee.selected = true)
+}
+
+function deselectAllFees() {
+  form.other_fees.forEach(fee => fee.selected = false)
+}
+
+function submit() {
+  if (!canSubmit.value) return
+  
+  const payload = {
+    account_id: form.account_id,
+    year_level: form.year_level,
+    semester: form.semester,
+    school_year: form.school_year,
+    use_curriculum: form.use_curriculum,
+    program_id: form.program_id,
+    subjects: selectedSubjects.value.map(s => ({
+      id: s.id,
+      units: s.units,
+      amount: s.amount
+    })),
+    other_fees: selectedFees.value.map(f => ({
+      id: f.id,
+      amount: f.amount
+    }))
+  }
+  
+  form.post(route('student-fees.store'), {
+    preserveScroll: true,
+    onSuccess: () => {
+      // Reset form
+      selectedStudent.value = null
+      form.reset()
     }
-};
+  })
+}
 
-const removeSubject = (subjectId: number) => {
-    selectedSubjects.value = selectedSubjects.value.filter(s => s.id !== subjectId);
-};
+// ============================================
+// WATCHERS
+// ============================================
+watch(() => form.use_curriculum, (useCurriculum) => {
+  if (useCurriculum && form.program_id) {
+    loadCurriculumPreview()
+  } else {
+    showCurriculumPreview.value = false
+    curriculumPreview.value = null
+  }
+})
 
-const getSubjectDetails = (subjectId: number) => {
-    return availableSubjects.value.find(s => s.id === subjectId);
-};
-
-// Fee management
-const addFee = (fee: Fee) => {
-    const exists = selectedFees.value.find(f => f.id === fee.id);
-    if (!exists) {
-        selectedFees.value.push({
-            id: fee.id,
-            amount: parseFloat(String(fee.amount)) || 0,
-        });
-    }
-};
-
-const removeFee = (feeId: number) => {
-    selectedFees.value = selectedFees.value.filter(f => f.id !== feeId);
-};
-
-const getFeeDetails = (feeId: number) => {
-    return availableFees.value.find(f => f.id === feeId);
-};
-
-// Watch for changes to update form
-watch([selectedSubjects, selectedFees], () => {
-    form.subjects = selectedSubjects.value;
-    form.other_fees = selectedFees.value;
-}, { deep: true });
-
-// Submit form
-const submit = () => {
-    form.post(route('student-fees.store'), {
-        preserveScroll: true,
-    });
-};
-
-// Format currency
-const formatCurrency = (amount: number) => {
-    return new Intl.NumberFormat('en-PH', {
-        style: 'currency',
-        currency: 'PHP',
-    }).format(amount);
-};
-
-// Get status color
-const getStatusColor = (status: string) => {
-    switch (status) {
-        case 'active':
-            return 'bg-green-100 text-green-800';
-        case 'graduated':
-            return 'bg-blue-100 text-blue-800';
-        case 'dropped':
-            return 'bg-red-100 text-red-800';
-        default:
-            return 'bg-gray-100 text-gray-800';
-    }
-};
+watch(() => [form.program_id, form.year_level, form.semester, form.school_year], () => {
+  if (form.use_curriculum && form.program_id) {
+    loadCurriculumPreview()
+  }
+})
 </script>
 
 <template>
-    <Head title="Create Student Assessment" />
-
-    <AppLayout>
-        <div class="space-y-6 max-w-7xl mx-auto p-6">
-            <Breadcrumbs :items="breadcrumbs" />
-
-            <!-- Header -->
-            <div class="flex items-center gap-4">
-                <Link :href="route('student-fees.index')">
-                    <Button variant="outline" size="sm" class="flex items-center gap-2">
-                        <ArrowLeft class="w-4 h-4" />
-                        Back
-                    </Button>
-                </Link>
-                <div>
-                    <h1 class="text-3xl font-bold">Create Student Assessment</h1>
-                    <p class="text-gray-600 mt-2">
-                        {{ currentStep === 1 ? 'Step 1: Select Student' : 'Step 2: Create Assessment' }}
-                    </p>
-                </div>
-            </div>
-
-            <!-- Step Indicator -->
-            <div class="flex items-center justify-center gap-4">
-                <div class="flex items-center gap-2">
-                    <div :class="[
-                        'w-10 h-10 rounded-full flex items-center justify-center font-semibold',
-                        currentStep >= 1 ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-600'
-                    ]">
-                        1
-                    </div>
-                    <span class="font-medium">Select Student</span>
-                </div>
-                <div class="w-24 h-1 bg-gray-200">
-                    <div :class="[
-                        'h-full transition-all duration-300',
-                        currentStep >= 2 ? 'bg-blue-600 w-full' : 'w-0'
-                    ]"></div>
-                </div>
-                <div class="flex items-center gap-2">
-                    <div :class="[
-                        'w-10 h-10 rounded-full flex items-center justify-center font-semibold',
-                        currentStep >= 2 ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-600'
-                    ]">
-                        2
-                    </div>
-                    <span class="font-medium">Create Assessment</span>
-                </div>
-            </div>
-
-            <!-- STEP 1: Student Selection -->
-            <div v-if="currentStep === 1" class="space-y-6">
-                <!-- Search Bar -->
-                <div class="bg-white rounded-lg shadow-sm border p-6">
-                    <div class="relative">
-                        <Search class="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
-                        <Input
-                            v-model="studentSearch"
-                            placeholder="Search by Student ID, Name, Email, or Course..."
-                            class="pl-10"
-                        />
-                    </div>
-                </div>
-
-                <!-- Student List -->
-                <div class="bg-white rounded-lg shadow-sm border overflow-hidden">
-                    <div class="p-6 border-b">
-                        <h2 class="text-lg font-semibold">Select a Student</h2>
-                        <p class="text-sm text-gray-600 mt-1">
-                            Choose an active student to create an assessment for
-                        </p>
-                    </div>
-
-                    <div class="overflow-x-auto">
-                        <table class="min-w-full divide-y divide-gray-200">
-                            <thead class="bg-gray-50">
-                                <tr>
-                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
-                                        Student ID
-                                    </th>
-                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
-                                        Name
-                                    </th>
-                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
-                                        Course
-                                    </th>
-                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
-                                        Year Level
-                                    </th>
-                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
-                                        Status
-                                    </th>
-                                    <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">
-                                        Action
-                                    </th>
-                                </tr>
-                            </thead>
-                            <tbody class="bg-white divide-y divide-gray-200">
-                                <tr v-if="filteredStudents.length === 0">
-                                    <td colspan="6" class="px-6 py-12 text-center text-gray-500">
-                                        <User class="w-12 h-12 mx-auto mb-3 text-gray-300" />
-                                        <p class="text-lg font-medium">No students found</p>
-                                        <p class="text-sm mt-1">Try adjusting your search criteria</p>
-                                    </td>
-                                </tr>
-                                <tr 
-                                    v-for="student in filteredStudents" 
-                                    :key="student.id" 
-                                    class="hover:bg-gray-50 transition-colors cursor-pointer"
-                                    @click="selectStudent(student)"
-                                >
-                                    <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                                        {{ student.student_id }}
-                                    </td>
-                                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                                        <div>
-                                            <div class="font-medium">{{ student.name }}</div>
-                                            <div class="text-xs text-gray-500">{{ student.email }}</div>
-                                        </div>
-                                    </td>
-                                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                                        {{ student.course }}
-                                    </td>
-                                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                                        {{ student.year_level }}
-                                    </td>
-                                    <td class="px-6 py-4 whitespace-nowrap">
-                                        <span 
-                                            class="px-2 py-1 text-xs font-semibold rounded-full"
-                                            :class="getStatusColor(student.status)"
-                                        >
-                                            {{ student.status }}
-                                        </span>
-                                    </td>
-                                    <td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                                        <Button size="sm" @click.stop="selectStudent(student)">
-                                            Select
-                                        </Button>
-                                    </td>
-                                </tr>
-                            </tbody>
-                        </table>
-                    </div>
-                </div>
-            </div>
-
-            <!-- STEP 2: Assessment Form -->
-            <form v-if="currentStep === 2" @submit.prevent="submit" class="space-y-6">
-                <!-- Selected Student Info -->
-                <div class="bg-blue-50 rounded-lg border-2 border-blue-200 p-6">
-                    <div class="flex items-center justify-between">
-                        <div>
-                            <h3 class="text-lg font-semibold text-gray-900">Selected Student</h3>
-                            <div class="mt-2 grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
-                                <div>
-                                    <span class="text-gray-600">Student ID:</span>
-                                    <p class="font-medium">{{ selectedStudent?.student_id }}</p>
-                                </div>
-                                <div>
-                                    <span class="text-gray-600">Name:</span>
-                                    <p class="font-medium">{{ selectedStudent?.name }}</p>
-                                </div>
-                                <div>
-                                    <span class="text-gray-600">Course:</span>
-                                    <p class="font-medium">{{ selectedStudent?.course }}</p>
-                                </div>
-                                <div>
-                                    <span class="text-gray-600">Year Level:</span>
-                                    <p class="font-medium">{{ selectedStudent?.year_level }}</p>
-                                </div>
-                            </div>
-                        </div>
-                        <Button 
-                            type="button" 
-                            variant="outline" 
-                            size="sm"
-                            @click="backToStudentSelection"
-                        >
-                            Change Student
-                        </Button>
-                    </div>
-                </div>
-
-                <!-- Term Information -->
-                <div class="bg-white rounded-lg shadow-sm border p-6">
-                    <h2 class="text-lg font-semibold mb-4">Term Information</h2>
-                    <div class="grid grid-cols-3 gap-4">
-                        <div class="space-y-2">
-                            <Label for="year_level">Year Level</Label>
-                            <select
-                                id="year_level"
-                                v-model="form.year_level"
-                                required
-                                class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                            >
-                                <option value="">Select year level</option>
-                                <option
-                                    v-for="year in yearLevels"
-                                    :key="year"
-                                    :value="year"
-                                >
-                                    {{ year }}
-                                </option>
-                            </select>
-                            <p v-if="form.errors?.year_level" class="text-sm text-red-500">
-                                {{ form.errors.year_level }}
-                            </p>
-                        </div>
-
-                        <div class="space-y-2">
-                            <Label for="semester">Semester</Label>
-                            <select
-                                id="semester"
-                                v-model="form.semester"
-                                required
-                                class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                            >
-                                <option value="">Select semester</option>
-                                <option
-                                    v-for="sem in semesters"
-                                    :key="sem"
-                                    :value="sem"
-                                >
-                                    {{ sem }}
-                                </option>
-                            </select>
-                            <p v-if="form.errors?.semester" class="text-sm text-red-500">
-                                {{ form.errors.semester }}
-                            </p>
-                        </div>
-
-                        <div class="space-y-2">
-                            <Label for="school_year">School Year</Label>
-                            <select
-                                id="school_year"
-                                v-model="form.school_year"
-                                required
-                                class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                            >
-                                <option value="">Select school year</option>
-                                <option
-                                    v-for="sy in schoolYears"
-                                    :key="sy"
-                                    :value="sy"
-                                >
-                                    {{ sy }}
-                                </option>
-                            </select>
-                            <p v-if="form.errors?.school_year" class="text-sm text-red-500">
-                                {{ form.errors.school_year }}
-                            </p>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Subjects Section -->
-                <div class="bg-white rounded-lg shadow-sm border p-6">
-                    <h2 class="text-lg font-semibold mb-4">Subjects</h2>
-                    
-                    <!-- Available Subjects -->
-                    <div class="space-y-2 mb-4">
-                        <Label>Available Subjects</Label>
-                        <div v-if="isLoadingData" class="text-center py-8">
-                            <p class="text-gray-500">Loading subjects...</p>
-                        </div>
-                        <div v-else class="grid grid-cols-1 gap-2 max-h-48 overflow-y-auto border rounded-lg p-2">
-                            <div
-                                v-for="subject in availableSubjects"
-                                :key="subject.id"
-                                class="flex items-center justify-between p-3 hover:bg-gray-50 rounded cursor-pointer border"
-                                @click="addSubject(subject)"
-                            >
-                                <div>
-                                    <p class="font-medium">{{ subject.code }} - {{ subject.name }}</p>
-                                    <p class="text-sm text-gray-600">
-                                        {{ subject.units }} units × {{ formatCurrency(subject.price_per_unit) }}
-                                        <span v-if="subject.has_lab">+ Lab Fee {{ formatCurrency(subject.lab_fee) }}</span>
-                                    </p>
-                                </div>
-                                <div class="font-medium text-blue-600">
-                                    {{ formatCurrency(subject.total_cost) }}
-                                </div>
-                            </div>
-                            <div v-if="availableSubjects.length === 0 && !isLoadingData" class="text-center py-4 text-gray-500">
-                                No subjects available for this student
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- Selected Subjects -->
-                    <div class="space-y-2">
-                        <Label>Selected Subjects</Label>
-                        <div class="space-y-2">
-                            <div
-                                v-for="selected in selectedSubjects"
-                                :key="selected.id"
-                                class="flex items-center justify-between p-3 border rounded-lg bg-gray-50"
-                            >
-                                <div class="flex-1">
-                                    <p class="font-medium">
-                                        {{ getSubjectDetails(selected.id)?.code }} - 
-                                        {{ getSubjectDetails(selected.id)?.name }}
-                                    </p>
-                                    <p class="text-sm text-gray-600">
-                                        {{ selected.units }} units
-                                    </p>
-                                </div>
-                                <div class="flex items-center gap-4">
-                                    <span class="font-medium">{{ formatCurrency(selected.amount) }}</span>
-                                    <button
-                                        type="button"
-                                        class="text-red-500 hover:text-red-700"
-                                        @click="removeSubject(selected.id)"
-                                    >
-                                        <Trash2 class="w-4 h-4" />
-                                    </button>
-                                </div>
-                            </div>
-                            <div v-if="selectedSubjects.length === 0" class="text-center py-8 text-gray-500 border rounded-lg bg-gray-50">
-                                No subjects selected. Click on subjects above to add them.
-                            </div>
-                        </div>
-                        <p v-if="form.errors?.subjects" class="text-sm text-red-500">
-                            {{ form.errors.subjects }}
-                        </p>
-                    </div>
-
-                    <!-- Tuition Total -->
-                    <div class="flex justify-between items-center p-4 bg-blue-50 rounded-lg mt-4 border border-blue-200">
-                        <span class="font-medium text-lg">Total Tuition Fee</span>
-                        <span class="text-2xl font-bold text-blue-600">{{ formatCurrency(tuitionTotal) }}</span>
-                    </div>
-                </div>
-
-                <!-- Other Fees Section -->
-                <div class="bg-white rounded-lg shadow-sm border p-6">
-                    <h2 class="text-lg font-semibold mb-4">Other Fees</h2>
-                    
-                    <!-- Available Fees -->
-                    <div class="space-y-2 mb-4">
-                        <Label>Available Fees</Label>
-                        <div v-if="isLoadingData" class="text-center py-8">
-                            <p class="text-gray-500">Loading fees...</p>
-                        </div>
-                        <div v-else class="grid grid-cols-1 gap-2 max-h-48 overflow-y-auto border rounded-lg p-2">
-                            <div
-                                v-for="fee in availableFees"
-                                :key="fee.id"
-                                class="flex items-center justify-between p-3 hover:bg-gray-50 rounded cursor-pointer border"
-                                @click="addFee(fee)"
-                            >
-                                <div>
-                                    <p class="font-medium">{{ fee.name }}</p>
-                                    <p class="text-sm text-gray-600">{{ fee.category }}</p>
-                                </div>
-                                <div class="font-medium text-blue-600">
-                                    {{ formatCurrency(fee.amount) }}
-                                </div>
-                            </div>
-                            <div v-if="availableFees.length === 0 && !isLoadingData" class="text-center py-4 text-gray-500">
-                                No fees available
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- Selected Fees -->
-                    <div class="space-y-2">
-                        <Label>Selected Fees</Label>
-                        <div class="space-y-2">
-                            <div
-                                v-for="selected in selectedFees"
-                                :key="selected.id"
-                                class="flex items-center justify-between p-3 border rounded-lg bg-gray-50"
-                            >
-                                <div class="flex-1">
-                                    <p class="font-medium">{{ getFeeDetails(selected.id)?.name }}</p>
-                                    <p class="text-sm text-gray-600">
-                                        {{ getFeeDetails(selected.id)?.category }}
-                                    </p>
-                                </div>
-                                <div class="flex items-center gap-4">
-                                    <span class="font-medium">{{ formatCurrency(selected.amount) }}</span>
-                                    <button
-                                        type="button"
-                                        class="text-red-500 hover:text-red-700"
-                                        @click="removeFee(selected.id)"
-                                    >
-                                        <Trash2 class="w-4 h-4" />
-                                    </button>
-                                </div>
-                            </div>
-                            <div v-if="selectedFees.length === 0" class="text-center py-8 text-gray-500 border rounded-lg bg-gray-50">
-                                No fees selected. Click on fees above to add them.
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- Other Fees Total -->
-                    <div class="flex justify-between items-center p-4 bg-blue-50 rounded-lg mt-4 border border-blue-200">
-                        <span class="font-medium text-lg">Total Other Fees</span>
-                        <span class="text-2xl font-bold text-blue-600">{{ formatCurrency(otherFeesTotal) }}</span>
-                    </div>
-                </div>
-
-                <!-- Grand Total -->
-                <div class="bg-gradient-to-r from-blue-600 to-blue-700 rounded-lg p-6 text-white shadow-lg">
-                    <div class="flex justify-between items-center">
-                        <div>
-                            <p class="text-blue-100 text-sm uppercase tracking-wide mb-1">Total Assessment Fee Amount</p>
-                            <p class="text-4xl font-bold">{{ formatCurrency(grandTotal) }}</p>
-                        </div>
-                        <div class="text-right">
-                            <p class="text-blue-100 text-sm">Tuition: {{ formatCurrency(tuitionTotal) }}</p>
-                            <p class="text-blue-100 text-sm">Other Fees: {{ formatCurrency(otherFeesTotal) }}</p>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Actions -->
-                <div class="flex items-center justify-between gap-4 pt-4">
-                    <Button 
-                        type="button" 
-                        variant="outline"
-                        @click="backToStudentSelection"
-                    >
-                        Back to Student Selection
-                    </Button>
-                    <div class="flex gap-4">
-                        <Link :href="route('student-fees.index')">
-                            <Button type="button" variant="outline">
-                                Cancel
-                            </Button>
-                        </Link>
-                        <Button 
-                            type="submit" 
-                            :disabled="form.processing || !form.user_id || selectedSubjects.length === 0"
-                            class="min-w-[200px]"
-                        >
-                            {{ form.processing ? 'Creating...' : 'Create Assessment' }}
-                        </Button>
-                    </div>
-                </div>
-            </form>
+  <AppShell variant="sidebar">
+    <AppSidebar />
+    
+    <div class="flex flex-1 flex-col gap-4 p-4 pt-0">
+      <!-- Header -->
+      <div class="flex items-center justify-between">
+        <div>
+          <h1 class="text-3xl font-bold tracking-tight">Create Student Assessment</h1>
+          <p class="text-muted-foreground">Generate fee assessment for existing student</p>
         </div>
-    </AppLayout>
+      </div>
+
+      <div class="grid gap-6 lg:grid-cols-3">
+        <!-- STEP 1: Select Student -->
+        <Card class="lg:col-span-1">
+          <CardHeader>
+            <CardTitle class="flex items-center gap-2">
+              <User class="h-5 w-5" />
+              Step 1: Select Student
+            </CardTitle>
+            <CardDescription>Choose student to assess</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div class="space-y-4">
+              <!-- Search -->
+              <div class="relative">
+                <Search class="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
+                <Input
+                  v-model="studentSearch"
+                  placeholder="Search by name, ID, email..."
+                  class="pl-8"
+                />
+              </div>
+
+              <!-- Student List -->
+              <ScrollArea class="h-[400px] rounded-md border">
+                <div class="p-4 space-y-2">
+                  <button
+                    v-for="student in filteredStudents"
+                    :key="student.id"
+                    @click="selectStudent(student)"
+                    class="w-full text-left p-3 rounded-lg border hover:bg-accent transition-colors"
+                    :class="{
+                      'bg-primary text-primary-foreground': selectedStudent?.id === student.id
+                    }"
+                  >
+                    <div class="font-medium">{{ student.name }}</div>
+                    <div class="text-sm opacity-80">{{ student.student_id }}</div>
+                    <div class="text-xs opacity-60 mt-1">
+                      {{ student.course }} - {{ student.year_level }}
+                    </div>
+                  </button>
+                </div>
+              </ScrollArea>
+
+              <!-- Selected Student Info -->
+              <Alert v-if="selectedStudent" class="bg-green-50 border-green-200">
+                <CheckCircle class="h-4 w-4 text-green-600" />
+                <AlertDescription class="text-green-800">
+                  <strong>{{ selectedStudent.name }}</strong><br>
+                  {{ selectedStudent.student_id }} | {{ selectedStudent.account_id }}
+                </AlertDescription>
+              </Alert>
+            </div>
+          </CardContent>
+        </Card>
+
+        <!-- STEP 2: Assessment Configuration -->
+        <Card class="lg:col-span-2">
+          <CardHeader>
+            <CardTitle class="flex items-center gap-2">
+              <FileText class="h-5 w-5" />
+              Step 2: Configure Assessment
+            </CardTitle>
+            <CardDescription>Set term and select fees</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <form @submit.prevent="submit" class="space-y-6">
+              <!-- Term Selection -->
+              <div class="grid gap-4 md:grid-cols-3">
+                <div class="space-y-2">
+                  <Label for="year_level">Year Level</Label>
+                  <Select v-model="form.year_level" :disabled="!selectedStudent">
+                    <SelectTrigger id="year_level">
+                      <SelectValue placeholder="Select year level" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem v-for="level in yearLevels" :key="level" :value="level">
+                        {{ level }}
+                      </SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div class="space-y-2">
+                  <Label for="semester">Semester</Label>
+                  <Select v-model="form.semester" :disabled="!selectedStudent">
+                    <SelectTrigger id="semester">
+                      <SelectValue placeholder="Select semester" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem v-for="sem in semesters" :key="sem" :value="sem">
+                        {{ sem }}
+                      </SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div class="space-y-2">
+                  <Label for="school_year">School Year</Label>
+                  <Select v-model="form.school_year" :disabled="!selectedStudent">
+                    <SelectTrigger id="school_year">
+                      <SelectValue placeholder="Select school year" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem v-for="year in schoolYears" :key="year" :value="year">
+                        {{ year }}
+                      </SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+
+              <!-- OBE Curriculum Option -->
+              <div v-if="programs" class="space-y-4">
+                <Separator />
+                
+                <div class="flex items-center space-x-2">
+                  <Checkbox 
+                    id="use_curriculum" 
+                    v-model:checked="form.use_curriculum"
+                    :disabled="!selectedStudent"
+                  />
+                  <Label 
+                    for="use_curriculum" 
+                    class="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
+                  >
+                    Use OBE Curriculum Assessment
+                  </Label>
+                </div>
+
+                <div v-if="form.use_curriculum" class="space-y-2">
+                  <Label for="program_id">Select Program</Label>
+                  <Select v-model="form.program_id">
+                    <SelectTrigger id="program_id">
+                      <SelectValue placeholder="Select program" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem 
+                        v-for="program in programs" 
+                        :key="program.id" 
+                        :value="program.id"
+                      >
+                        {{ program.full_name }}
+                      </SelectItem>
+                    </SelectContent>
+                  </Select>
+
+                  <!-- Curriculum Preview -->
+                  <Alert v-if="loadingCurriculum" class="bg-blue-50 border-blue-200">
+                    <Loader2 class="h-4 w-4 animate-spin text-blue-600" />
+                    <AlertDescription class="text-blue-800">
+                      Loading curriculum preview...
+                    </AlertDescription>
+                  </Alert>
+
+                  <Card v-if="showCurriculumPreview && curriculumPreview" class="mt-4">
+                    <CardHeader>
+                      <CardTitle class="text-base">Curriculum Preview</CardTitle>
+                      <CardDescription>{{ curriculumPreview.program }} - {{ curriculumPreview.term }}</CardDescription>
+                    </CardHeader>
+                    <CardContent>
+                      <ScrollArea class="h-[200px]">
+                        <table class="w-full text-sm">
+                          <thead>
+                            <tr class="border-b">
+                              <th class="text-left p-2">Code</th>
+                              <th class="text-left p-2">Title</th>
+                              <th class="text-right p-2">Units</th>
+                              <th class="text-right p-2">Lab</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            <tr v-for="course in curriculumPreview.courses" :key="course.code" class="border-b">
+                              <td class="p-2 font-mono">{{ course.code }}</td>
+                              <td class="p-2">{{ course.title }}</td>
+                              <td class="p-2 text-right">{{ course.total_units }}</td>
+                              <td class="p-2 text-right">
+                                <Badge v-if="course.has_lab" variant="secondary">Lab</Badge>
+                              </td>
+                            </tr>
+                          </tbody>
+                        </table>
+                      </ScrollArea>
+
+                      <Separator class="my-4" />
+
+                      <div class="space-y-2 text-sm">
+                        <div class="flex justify-between">
+                          <span>Tuition Fee:</span>
+                          <span class="font-semibold">₱{{ curriculumPreview.totals.tuition.toLocaleString('en-PH', { minimumFractionDigits: 2 }) }}</span>
+                        </div>
+                        <div class="flex justify-between">
+                          <span>Lab Fees:</span>
+                          <span class="font-semibold">₱{{ curriculumPreview.totals.lab_fees.toLocaleString('en-PH', { minimumFractionDigits: 2 }) }}</span>
+                        </div>
+                        <div class="flex justify-between">
+                          <span>Registration Fee:</span>
+                          <span class="font-semibold">₱{{ curriculumPreview.totals.registration_fee.toLocaleString('en-PH', { minimumFractionDigits: 2 }) }}</span>
+                        </div>
+                        <div class="flex justify-between">
+                          <span>Misc Fee:</span>
+                          <span class="font-semibold">₱{{ curriculumPreview.totals.misc_fee.toLocaleString('en-PH', { minimumFractionDigits: 2 }) }}</span>
+                        </div>
+                        <Separator />
+                        <div class="flex justify-between text-base font-bold">
+                          <span>Total Assessment:</span>
+                          <span class="text-primary">₱{{ curriculumPreview.totals.total_assessment.toLocaleString('en-PH', { minimumFractionDigits: 2 }) }}</span>
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+                </div>
+              </div>
+
+              <!-- Manual Subject Selection -->
+              <div v-if="!form.use_curriculum && selectedStudent" class="space-y-4">
+                <Separator />
+
+                <!-- Subjects -->
+                <div class="space-y-2">
+                  <div class="flex items-center justify-between">
+                    <Label class="text-base font-semibold">
+                      <BookOpen class="inline h-4 w-4 mr-1" />
+                      Subjects
+                    </Label>
+                    <div class="space-x-2">
+                      <Button 
+                        type="button" 
+                        variant="outline" 
+                        size="sm"
+                        @click="selectAllSubjects"
+                      >
+                        <Plus class="h-4 w-4 mr-1" />
+                        Select All
+                      </Button>
+                      <Button 
+                        type="button" 
+                        variant="outline" 
+                        size="sm"
+                        @click="deselectAllSubjects"
+                      >
+                        <Minus class="h-4 w-4 mr-1" />
+                        Clear All
+                      </Button>
+                    </div>
+                  </div>
+
+                  <ScrollArea class="h-[200px] rounded-md border p-4">
+                    <div class="space-y-2">
+                      <div
+                        v-for="(subject, index) in form.subjects"
+                        :key="subject.id"
+                        class="flex items-center space-x-2 p-2 rounded hover:bg-accent"
+                      >
+                        <Checkbox
+                          :id="`subject-${subject.id}`"
+                          :checked="subject.selected"
+                          @update:checked="() => toggleSubject(index)"
+                        />
+                        <Label
+                          :for="`subject-${subject.id}`"
+                          class="flex-1 cursor-pointer"
+                        >
+                          <div class="font-medium">{{ subject.code }} - {{ subject.name }}</div>
+                          <div class="text-sm text-muted-foreground">
+                            {{ subject.units }} units × ₱{{ (subject.amount / subject.units).toFixed(2) }} = 
+                            <span class="font-semibold">₱{{ subject.amount.toFixed(2) }}</span>
+                          </div>
+                        </Label>
+                      </div>
+                    </div>
+                  </ScrollArea>
+                </div>
+
+                <!-- Other Fees -->
+                <div class="space-y-2">
+                  <div class="flex items-center justify-between">
+                    <Label class="text-base font-semibold">
+                      <Calculator class="inline h-4 w-4 mr-1" />
+                      Other Fees
+                    </Label>
+                    <div class="space-x-2">
+                      <Button 
+                        type="button" 
+                        variant="outline" 
+                        size="sm"
+                        @click="selectAllFees"
+                      >
+                        <Plus class="h-4 w-4 mr-1" />
+                        Select All
+                      </Button>
+                      <Button 
+                        type="button" 
+                        variant="outline" 
+                        size="sm"
+                        @click="deselectAllFees"
+                      >
+                        <Minus class="h-4 w-4 mr-1" />
+                        Clear All
+                      </Button>
+                    </div>
+                  </div>
+
+                  <ScrollArea class="h-[200px] rounded-md border p-4">
+                    <div class="space-y-2">
+                      <div
+                        v-for="(fee, index) in form.other_fees"
+                        :key="fee.id"
+                        class="flex items-center space-x-2 p-2 rounded hover:bg-accent"
+                      >
+                        <Checkbox
+                          :id="`fee-${fee.id}`"
+                          :checked="fee.selected"
+                          @update:checked="() => toggleFee(index)"
+                        />
+                        <Label
+                          :for="`fee-${fee.id}`"
+                          class="flex-1 cursor-pointer"
+                        >
+                          <div class="font-medium">{{ fee.name }}</div>
+                          <div class="text-sm text-muted-foreground">
+                            {{ fee.category }} - 
+                            <span class="font-semibold">₱{{ fee.amount.toFixed(2) }}</span>
+                          </div>
+                        </Label>
+                      </div>
+                    </div>
+                  </ScrollArea>
+                </div>
+              </div>
+
+              <!-- Summary -->
+              <Card v-if="selectedSubjects.length > 0 || selectedFees.length > 0" class="bg-muted/50">
+                <CardHeader>
+                  <CardTitle class="text-base">Assessment Summary</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div class="space-y-2 text-sm">
+                    <div class="flex justify-between">
+                      <span>Tuition ({{ selectedSubjects.length }} subjects):</span>
+                      <span class="font-semibold">₱{{ totalTuition.toLocaleString('en-PH', { minimumFractionDigits: 2 }) }}</span>
+                    </div>
+                    <div class="flex justify-between">
+                      <span>Other Fees ({{ selectedFees.length }} items):</span>
+                      <span class="font-semibold">₱{{ totalOtherFees.toLocaleString('en-PH', { minimumFractionDigits: 2 }) }}</span>
+                    </div>
+                    <Separator />
+                    <div class="flex justify-between text-lg font-bold">
+                      <span>Total Assessment:</span>
+                      <span class="text-primary">₱{{ grandTotal.toLocaleString('en-PH', { minimumFractionDigits: 2 }) }}</span>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+
+              <!-- Validation Alert -->
+              <Alert v-if="!canSubmit && selectedStudent" class="bg-yellow-50 border-yellow-200">
+                <AlertCircle class="h-4 w-4 text-yellow-600" />
+                <AlertDescription class="text-yellow-800">
+                  Please select at least one subject or use OBE curriculum to create assessment.
+                </AlertDescription>
+              </Alert>
+
+              <!-- Submit Button -->
+              <div class="flex justify-end gap-4">
+                <Button
+                  type="button"
+                  variant="outline"
+                  @click="() => { selectedStudent = null; form.reset(); }"
+                >
+                  Cancel
+                </Button>
+                <Button
+                  type="submit"
+                  :disabled="!canSubmit || form.processing"
+                >
+                  <Loader2 v-if="form.processing" class="mr-2 h-4 w-4 animate-spin" />
+                  Create Assessment
+                </Button>
+              </div>
+            </form>
+          </CardContent>
+        </Card>
+      </div>
+    </div>
+  </AppShell>
 </template>
