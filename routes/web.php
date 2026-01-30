@@ -10,13 +10,11 @@ use App\Http\Controllers\StudentFeeController;
 use App\Http\Controllers\TransactionController;
 use App\Http\Controllers\AccountingDashboardController;
 use App\Http\Controllers\FeeController;
-use App\Http\Controllers\SubjectController;
 use App\Http\Controllers\UserController;
 use App\Http\Controllers\AdminDashboardController;
 use App\Http\Controllers\NotificationController;
 use Illuminate\Support\Facades\Route;
 use Inertia\Inertia;
-use App\Http\Controllers\CurriculaController;
 use App\Http\Controllers\WebhookController;
 use App\Http\Controllers\StudentPaymentController;
 use App\Http\Controllers\PaymentGateways\GCashPaymentController;
@@ -55,99 +53,55 @@ Route::middleware(['auth', 'verified', 'role:student'])->prefix('student')->grou
 
 // ============================================
 // STUDENT ARCHIVE ROUTES (Admin/Accounting)
-// ✅ ALL ROUTES USE {accountId} PARAMETER
 // ============================================
 
 Route::middleware(['auth', 'verified', 'role:admin,accounting'])->group(function () {
-    // ✅ Student Archive - List all students
     Route::get('students', [StudentController::class, 'index'])->name('students.index');
-    
-    // ✅ Student Archive - View student profile by account_id
     Route::get('students/{accountId}', [StudentController::class, 'show'])->name('students.show');
-    
-    // ✅ Student Archive - Edit student by account_id
     Route::get('students/{accountId}/edit', [StudentController::class, 'edit'])->name('students.edit');
-    
-    // ✅ Student Archive - Update student by account_id
     Route::put('students/{accountId}', [StudentController::class, 'update'])->name('students.update');
-    
-    // ✅ Student Archive - Delete/Deactivate student by account_id
     Route::delete('students/{accountId}', [StudentController::class, 'destroy'])->name('students.destroy');
-    
-    // ✅ Student Archive - Record payment by account_id
     Route::post('students/{accountId}/payments', [StudentController::class, 'storePayment'])
         ->name('students.payments.store');
 });
 
 // ============================================
 // STUDENT FEE MANAGEMENT ROUTES
-// ✅ PRIMARY STUDENT CREATION & ASSESSMENT FLOW
-// ✅ ALL ROUTES USE account_id
 // ============================================
 
 Route::middleware(['auth', 'verified', 'role:admin,accounting'])->prefix('student-fees')->group(function () {
     
-    // ──────────────────────────────────────────
-    // SECTION 1: LIST & CREATE ROUTES
-    // ──────────────────────────────────────────
-    
-    // List all students for fee management
     Route::get('/', [StudentFeeController::class, 'index'])
         ->name('student-fees.index');
 
-    // ✅ CREATE NEW STUDENT (Primary Flow)
     Route::get('/create-student', [StudentFeeController::class, 'createStudent'])
         ->name('student-fees.create-student');
     
     Route::post('/store-student', [StudentFeeController::class, 'storeStudent'])
         ->name('student-fees.store-student');
 
-    // ✅ CREATE ASSESSMENT FOR EXISTING STUDENT
     Route::get('/create', [StudentFeeController::class, 'create'])
         ->name('student-fees.create');
     
     Route::post('/', [StudentFeeController::class, 'store'])
         ->name('student-fees.store');
 
-    // ──────────────────────────────────────────
-    // SECTION 2: CURRICULUM HELPERS
-    // ⚠️  MUST come BEFORE /{accountId} routes
-    // ──────────────────────────────────────────
-    
-    // Get available terms for a program
-    Route::get('/curriculum/terms/{program}', [StudentFeeController::class, 'getAvailableTerms'])
-        ->name('student-fees.curriculum.terms');
-    
-    // ✅ CRITICAL: Get curriculum preview (POST to avoid caching)
-    Route::post('/curriculum/preview', [StudentFeeController::class, 'getCurriculumPreview'])
-        ->name('student-fees.curriculum.preview');
-
-    // ──────────────────────────────────────────
-    // SECTION 3: STUDENT-SPECIFIC ROUTES
-    // ⚠️  Wildcard {accountId} - MUST come LAST
-    // ──────────────────────────────────────────
-    
-    // Export PDF by account_id (BEFORE show to avoid conflict)
     Route::get('/{accountId}/export-pdf', [StudentFeeController::class, 'exportPdf'])
         ->name('student-fees.export-pdf')
-        ->where('accountId', 'ACC-\d{8}-\d{4}'); // Validate account_id format
+        ->where('accountId', 'ACC-\d{8}-\d{4}');
 
-    // Edit assessment by account_id
     Route::get('/{accountId}/edit', [StudentFeeController::class, 'edit'])
         ->name('student-fees.edit')
         ->where('accountId', 'ACC-\d{8}-\d{4}');
 
-    // Update assessment by account_id
     Route::put('/{accountId}', [StudentFeeController::class, 'update'])
         ->name('student-fees.update')
         ->where('accountId', 'ACC-\d{8}-\d{4}');
 
-    // Record payment by account_id
     Route::post('/{accountId}/payments', [StudentFeeController::class, 'storePayment'])
         ->name('student-fees.payments.store')
         ->where('accountId', 'ACC-\d{8}-\d{4}');
 
-    // Show assessment by account_id (LAST)
     Route::get('/{accountId}', [StudentFeeController::class, 'show'])
         ->name('student-fees.show')
         ->where('accountId', 'ACC-\d{8}-\d{4}');
@@ -172,18 +126,6 @@ Route::middleware(['auth', 'verified', 'role:student'])->prefix('student')->grou
     
     Route::get('/payment/receipt/{transaction}', [StudentPaymentController::class, 'receipt'])
         ->name('student.payment.receipt');
-});
-
-// ============================================
-// CURRICULUM MANAGEMENT
-// ============================================
-
-Route::middleware(['auth', 'verified', 'role:admin,accounting'])->group(function () {
-    Route::resource('curricula', CurriculaController::class);
-    Route::post('curricula/{curriculum}/toggle-status', [CurriculaController::class, 'toggleStatus'])
-        ->name('curricula.toggleStatus');
-    Route::get('curricula/ajax/courses', [CurriculaController::class, 'getCourses'])
-        ->name('curricula.get-courses');
 });
 
 // ============================================
@@ -232,16 +174,6 @@ Route::middleware(['auth', 'verified', 'role:admin,accounting'])->group(function
     Route::resource('fees', FeeController::class);
     Route::post('fees/{fee}/toggle-status', [FeeController::class, 'toggleStatus'])->name('fees.toggleStatus');
     Route::post('fees/assign-to-students', [FeeController::class, 'assignToStudents'])->name('fees.assignToStudents');
-});
-
-// ============================================
-// SUBJECT MANAGEMENT
-// ============================================
-
-Route::middleware(['auth', 'verified', 'role:admin,accounting'])->group(function () {
-    Route::resource('subjects', SubjectController::class);
-    Route::post('subjects/{subject}/enroll-students', [SubjectController::class, 'enrollStudents'])
-        ->name('subjects.enrollStudents');
 });
 
 // ============================================
@@ -315,7 +247,6 @@ Route::middleware(['auth', 'verified', 'role:student'])->prefix('payment')->grou
     Route::get('/select-method', [PaymentController::class, 'selectMethod'])
         ->name('payment.select-method');
     
-    // Future routes for each gateway
     Route::get('/gcash', [GCashPaymentController::class, 'create'])
         ->name('payment.gcash.create');
     Route::get('/maya', [MayaPaymentController::class, 'create'])
@@ -333,7 +264,6 @@ Route::prefix('webhooks')->name('webhooks.')->group(function () {
     Route::post('gcash', [WebhookController::class, 'gcash'])->name('gcash');
     Route::post('maya', [WebhookController::class, 'maya'])->name('maya');
     
-    // Test endpoint (local only)
     Route::get('test', [WebhookController::class, 'test'])->name('test');
 });
 
