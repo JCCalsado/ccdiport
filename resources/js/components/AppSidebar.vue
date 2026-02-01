@@ -47,12 +47,12 @@ const allNavItems: NavItem[] = [
         icon: Receipt,
         roles: ['accounting', 'admin'],
     },
-    {
-        title: 'Subject Management',
-        href: route('subjects.index'),
-        icon: BookOpen,
-        roles: ['accounting', 'admin'],
-    },
+    // {
+    //     title: 'Subject Management',
+    //     href: route('subjects.index'),
+    //     icon: BookOpen,
+    //     roles: ['accounting', 'admin'],
+    // },
     {
         title: 'User Management',
         href: route('users.index'),

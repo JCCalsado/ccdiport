@@ -7,9 +7,6 @@ use Illuminate\Support\Facades\DB;
 
 return new class extends Migration
 {
-    /**
-     * Run the migrations.
-     */
     public function up(): void
     {
         // Disable foreign key checks temporarily
@@ -30,34 +27,63 @@ return new class extends Migration
         // Remove curriculum-related columns from student_assessments
         if (Schema::hasTable('student_assessments')) {
             Schema::table('student_assessments', function (Blueprint $table) {
-                // Drop foreign key first if exists
+                // Check and drop foreign key safely
                 try {
-                    $table->dropForeign(['curriculum_id']);
+                    if (Schema::hasColumn('student_assessments', 'curriculum_id')) {
+                        // Get all foreign keys
+                        $foreignKeys = DB::select("
+                            SELECT CONSTRAINT_NAME 
+                            FROM information_schema.KEY_COLUMN_USAGE 
+                            WHERE TABLE_NAME = 'student_assessments' 
+                            AND COLUMN_NAME = 'curriculum_id' 
+                            AND CONSTRAINT_SCHEMA = DATABASE()
+                        ");
+                        
+                        // Drop each foreign key found
+                        foreach ($foreignKeys as $fk) {
+                            DB::statement("ALTER TABLE student_assessments DROP FOREIGN KEY {$fk->CONSTRAINT_NAME}");
+                        }
+                    }
                 } catch (\Exception $e) {
                     // Foreign key might not exist, continue
                 }
                 
-                // Drop columns
+                // Now drop the columns
+                $columnsToDrop = [];
                 if (Schema::hasColumn('student_assessments', 'curriculum_id')) {
-                    $table->dropColumn('curriculum_id');
+                    $columnsToDrop[] = 'curriculum_id';
                 }
                 if (Schema::hasColumn('student_assessments', 'payment_terms')) {
-                    $table->dropColumn('payment_terms');
+                    $columnsToDrop[] = 'payment_terms';
+                }
+                
+                if (!empty($columnsToDrop)) {
+                    $table->dropColumn($columnsToDrop);
                 }
             });
         }
 
-        // Remove curriculum-related columns from student_payment_terms
+        // Remove curriculum_id from student_payment_terms
         if (Schema::hasTable('student_payment_terms')) {
             Schema::table('student_payment_terms', function (Blueprint $table) {
-                // Drop foreign key first if exists
                 try {
-                    $table->dropForeign(['curriculum_id']);
+                    if (Schema::hasColumn('student_payment_terms', 'curriculum_id')) {
+                        $foreignKeys = DB::select("
+                            SELECT CONSTRAINT_NAME 
+                            FROM information_schema.KEY_COLUMN_USAGE 
+                            WHERE TABLE_NAME = 'student_payment_terms' 
+                            AND COLUMN_NAME = 'curriculum_id' 
+                            AND CONSTRAINT_SCHEMA = DATABASE()
+                        ");
+                        
+                        foreach ($foreignKeys as $fk) {
+                            DB::statement("ALTER TABLE student_payment_terms DROP FOREIGN KEY {$fk->CONSTRAINT_NAME}");
+                        }
+                    }
                 } catch (\Exception $e) {
-                    // Foreign key might not exist, continue
+                    // Continue
                 }
                 
-                // Drop column
                 if (Schema::hasColumn('student_payment_terms', 'curriculum_id')) {
                     $table->dropColumn('curriculum_id');
                 }
@@ -68,9 +94,6 @@ return new class extends Migration
         DB::statement('SET FOREIGN_KEY_CHECKS=1;');
     }
 
-    /**
-     * Reverse the migrations.
-     */
     public function down(): void
     {
         // This is a destructive migration - no rollback
