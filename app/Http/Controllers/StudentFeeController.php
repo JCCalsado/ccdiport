@@ -8,7 +8,6 @@ use App\Models\Fee;
 use App\Models\Transaction;
 use App\Models\Payment;
 use App\Models\StudentPaymentTerm;
-use App\Models\Program;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 use Illuminate\Support\Facades\DB;
@@ -16,21 +15,12 @@ use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Str;
 use Barryvdh\DomPDF\Facade\Pdf;
 use App\Services\AssessmentDataService;
-use App\Services\StudentCreationService;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\Log;
 use App\Models\OfficialReceipt;
 
 class StudentFeeController extends Controller
 {
-    protected $studentCreationService;
-
-    public function __construct(
-        StudentCreationService $studentCreationService
-    ) {
-        $this->studentCreationService = $studentCreationService;
-    }
-
     /**
      * ✅ Display listing using account_id
      */
@@ -138,7 +128,7 @@ class StudentFeeController extends Controller
     }
 
     /**
-     * ✅ Get student data by account_id (removed subject logic)
+     * ✅ Get student data by account_id
      */
     protected function getStudentDataForAssessment(string $accountId)
     {
@@ -168,7 +158,7 @@ class StudentFeeController extends Controller
     }
 
     /**
-     * ✅ Store assessment (removed subject logic)
+     * ✅ Store assessment
      */
     public function store(Request $request)
     {
@@ -214,6 +204,9 @@ class StudentFeeController extends Controller
 
             // Create payment terms
             $this->generatePaymentTermsFromAssessment($assessment, $student);
+
+            // Recalculate account balance
+            \App\Services\AccountService::recalculate($student->user);
 
             DB::commit();
 
@@ -281,7 +274,6 @@ class StudentFeeController extends Controller
             $payment = Payment::create([
                 'account_id' => $student->account_id,
                 'student_id' => $student->id,
-                'user_id' => $student->user_id,
                 'amount' => $validated['amount'],
                 'payment_method' => $validated['payment_method'],
                 'reference_number' => 'PAY-' . strtoupper(Str::random(10)),
@@ -335,7 +327,7 @@ class StudentFeeController extends Controller
     }
 
     /**
-     * ✅ Edit assessment (removed subject logic)
+     * ✅ Edit assessment
      */
     public function edit($accountId)
     {
@@ -363,7 +355,7 @@ class StudentFeeController extends Controller
     }
 
     /**
-     * ✅ Update assessment (removed subject logic)
+     * ✅ Update assessment
      */
     public function update(Request $request, string $accountId)
     {
@@ -496,7 +488,7 @@ class StudentFeeController extends Controller
     }
 
     /**
-     * ✅ Create student form (removed curriculum/program logic)
+     * ✅ Create student form
      */
     public function createStudent()
     {
@@ -526,7 +518,7 @@ class StudentFeeController extends Controller
     }
 
     /**
-     * ✅ Store new student (removed curriculum logic)
+     * ✅ Store new student
      */
     public function storeStudent(Request $request)
     {
@@ -618,7 +610,7 @@ class StudentFeeController extends Controller
     }
 
     /**
-     * ✅ Helper: Create transactions (removed subject logic)
+     * ✅ Helper: Create transactions
      */
     protected function createTransactionsFromAssessment(StudentAssessment $assessment, Student $student): void
     {

@@ -10,11 +10,9 @@ class DatabaseSeeder extends Seeder
     {
         $this->command->info('🚀 Starting clean database setup...');
         
-        // Core system data (users, programs, curriculum)
+        // Core system data (users, fees, notifications)
         $this->call([
-            OBECurriculumSeeder::class,
             ComprehensiveUserSeeder::class,
-            EnhancedSubjectSeeder::class,
             FeeSeeder::class,
             NotificationSeeder::class,
             StudentPaymentTermsSeeder::class,

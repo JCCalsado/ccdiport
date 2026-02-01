@@ -10,21 +10,17 @@ use App\Http\Controllers\StudentFeeController;
 use App\Http\Controllers\TransactionController;
 use App\Http\Controllers\AccountingDashboardController;
 use App\Http\Controllers\FeeController;
-use App\Http\Controllers\SubjectController;
 use App\Http\Controllers\UserController;
 use App\Http\Controllers\AdminDashboardController;
 use App\Http\Controllers\NotificationController;
 use Illuminate\Support\Facades\Route;
 use Inertia\Inertia;
-use App\Http\Controllers\CurriculaController;
 use App\Http\Controllers\WebhookController;
 use App\Http\Controllers\StudentPaymentController;
 use App\Http\Controllers\PaymentGateways\GCashPaymentController;
 use App\Http\Controllers\PaymentGateways\MayaPaymentController;
 use App\Http\Controllers\PaymentGateways\BankTransferController;
 use App\Models\OfficialReceipt;
-use App\Http\Controllers\FeeManagementController;
-use App\Http\Controllers\StudentArchiveController;
 
 // ============================================
 // PUBLIC ROUTES
@@ -110,20 +106,7 @@ Route::middleware(['auth', 'verified', 'role:admin,accounting'])->prefix('studen
         ->name('student-fees.store');
 
     // ──────────────────────────────────────────
-    // SECTION 2: CURRICULUM HELPERS
-    // ⚠️  MUST come BEFORE /{accountId} routes
-    // ──────────────────────────────────────────
-    
-    // Get available terms for a program
-    Route::get('/curriculum/terms/{program}', [StudentFeeController::class, 'getAvailableTerms'])
-        ->name('student-fees.curriculum.terms');
-    
-    // ✅ CRITICAL: Get curriculum preview (POST to avoid caching)
-    Route::post('/curriculum/preview', [StudentFeeController::class, 'getCurriculumPreview'])
-        ->name('student-fees.curriculum.preview');
-
-    // ──────────────────────────────────────────
-    // SECTION 3: STUDENT-SPECIFIC ROUTES
+    // SECTION 2: STUDENT-SPECIFIC ROUTES
     // ⚠️  Wildcard {accountId} - MUST come LAST
     // ──────────────────────────────────────────
     
@@ -177,18 +160,6 @@ Route::middleware(['auth', 'verified', 'role:student'])->prefix('student')->grou
 });
 
 // ============================================
-// CURRICULUM MANAGEMENT
-// ============================================
-
-Route::middleware(['auth', 'verified', 'role:admin,accounting'])->group(function () {
-    Route::resource('curricula', CurriculaController::class);
-    Route::post('curricula/{curriculum}/toggle-status', [CurriculaController::class, 'toggleStatus'])
-        ->name('curricula.toggleStatus');
-    Route::get('curricula/ajax/courses', [CurriculaController::class, 'getCourses'])
-        ->name('curricula.get-courses');
-});
-
-// ============================================
 // TRANSACTIONS (ALL USERS)
 // ============================================
 
@@ -236,28 +207,6 @@ Route::middleware(['auth', 'verified', 'role:admin,accounting'])->group(function
     Route::resource('fees', FeeController::class);
     Route::post('fees/{fee}/toggle-status', [FeeController::class, 'toggleStatus'])->name('fees.toggleStatus');
     Route::post('fees/assign-to-students', [FeeController::class, 'assignToStudents'])->name('fees.assignToStudents');
-});
-
-// ============================================
-// SUBJECT MANAGEMENT
-// ✅ FIXED: VIEW ROUTES OUTSIDE MIDDLEWARE
-// ============================================
-
-// ✅ PUBLIC VIEW ACCESS (All authenticated users can view subjects)
-Route::middleware(['auth', 'verified'])->group(function () {
-    Route::get('/subjects', [SubjectController::class, 'index'])->name('subjects.index');
-    Route::get('/subjects/{subject}', [SubjectController::class, 'show'])->name('subjects.show');
-});
-
-// ✅ ADMIN/ACCOUNTING MANAGEMENT ACCESS
-Route::middleware(['auth', 'verified', 'role:admin,accounting'])->group(function () {
-    Route::get('/subjects/create', [SubjectController::class, 'create'])->name('subjects.create');
-    Route::post('/subjects', [SubjectController::class, 'store'])->name('subjects.store');
-    Route::get('/subjects/{subject}/edit', [SubjectController::class, 'edit'])->name('subjects.edit');
-    Route::put('/subjects/{subject}', [SubjectController::class, 'update'])->name('subjects.update');
-    Route::delete('/subjects/{subject}', [SubjectController::class, 'destroy'])->name('subjects.destroy');
-    Route::post('/subjects/{subject}/enroll-students', [SubjectController::class, 'enrollStudents'])
-        ->name('subjects.enrollStudents');
 });
 
 // ============================================
