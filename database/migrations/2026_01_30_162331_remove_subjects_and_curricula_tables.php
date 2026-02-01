@@ -12,13 +12,13 @@ return new class extends Migration
         // Disable foreign key checks temporarily
         DB::statement('SET FOREIGN_KEY_CHECKS=0;');
 
-        // Drop pivot/junction tables first
+        // Drop pivot/junction tables first (if they exist)
         Schema::dropIfExists('curriculum_subjects');
         Schema::dropIfExists('curriculum_courses');
         Schema::dropIfExists('student_curricula');
         Schema::dropIfExists('student_enrollments');
 
-        // Drop main tables
+        // Drop main tables (if they exist)
         Schema::dropIfExists('curricula');
         Schema::dropIfExists('courses');
         Schema::dropIfExists('subjects');
@@ -28,8 +28,8 @@ return new class extends Migration
         if (Schema::hasTable('student_assessments')) {
             Schema::table('student_assessments', function (Blueprint $table) {
                 // Check and drop foreign key safely
-                try {
-                    if (Schema::hasColumn('student_assessments', 'curriculum_id')) {
+                if (Schema::hasColumn('student_assessments', 'curriculum_id')) {
+                    try {
                         // Get all foreign keys
                         $foreignKeys = DB::select("
                             SELECT CONSTRAINT_NAME 
@@ -41,24 +41,19 @@ return new class extends Migration
                         
                         // Drop each foreign key found
                         foreach ($foreignKeys as $fk) {
-                            DB::statement("ALTER TABLE student_assessments DROP FOREIGN KEY {$fk->CONSTRAINT_NAME}");
+                            DB::statement("ALTER TABLE student_assessments DROP FOREIGN KEY `{$fk->CONSTRAINT_NAME}`");
                         }
+                    } catch (\Exception $e) {
+                        // Foreign key might not exist, continue
                     }
-                } catch (\Exception $e) {
-                    // Foreign key might not exist, continue
+                    
+                    // Now drop the column
+                    $table->dropColumn('curriculum_id');
                 }
                 
-                // Now drop the columns
-                $columnsToDrop = [];
-                if (Schema::hasColumn('student_assessments', 'curriculum_id')) {
-                    $columnsToDrop[] = 'curriculum_id';
-                }
+                // Drop payment_terms column if it exists
                 if (Schema::hasColumn('student_assessments', 'payment_terms')) {
-                    $columnsToDrop[] = 'payment_terms';
-                }
-                
-                if (!empty($columnsToDrop)) {
-                    $table->dropColumn($columnsToDrop);
+                    $table->dropColumn('payment_terms');
                 }
             });
         }
@@ -66,8 +61,8 @@ return new class extends Migration
         // Remove curriculum_id from student_payment_terms
         if (Schema::hasTable('student_payment_terms')) {
             Schema::table('student_payment_terms', function (Blueprint $table) {
-                try {
-                    if (Schema::hasColumn('student_payment_terms', 'curriculum_id')) {
+                if (Schema::hasColumn('student_payment_terms', 'curriculum_id')) {
+                    try {
                         $foreignKeys = DB::select("
                             SELECT CONSTRAINT_NAME 
                             FROM information_schema.KEY_COLUMN_USAGE 
@@ -77,14 +72,12 @@ return new class extends Migration
                         ");
                         
                         foreach ($foreignKeys as $fk) {
-                            DB::statement("ALTER TABLE student_payment_terms DROP FOREIGN KEY {$fk->CONSTRAINT_NAME}");
+                            DB::statement("ALTER TABLE student_payment_terms DROP FOREIGN KEY `{$fk->CONSTRAINT_NAME}`");
                         }
+                    } catch (\Exception $e) {
+                        // Continue
                     }
-                } catch (\Exception $e) {
-                    // Continue
-                }
-                
-                if (Schema::hasColumn('student_payment_terms', 'curriculum_id')) {
+                    
                     $table->dropColumn('curriculum_id');
                 }
             });

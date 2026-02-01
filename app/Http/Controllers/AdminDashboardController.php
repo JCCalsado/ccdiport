@@ -93,8 +93,14 @@ class AdminDashboardController extends Controller
                               $paymentsWithoutAccountId + $assessmentsWithoutAccountId,
         ];
         
-        // ✅ Recent assessments
-        $recentAssessments = StudentAssessment::with(['student', 'curriculum.program'])
+        $resourceStats = [
+            'total_fees' => Fee::count(),
+            'active_fees' => Fee::where('is_active', true)->count(),
+        ];
+
+        $recentAssessments = StudentAssessment::with(['student' => function($query) {
+                $query->select('id', 'account_id', 'student_id', 'first_name', 'last_name', 'middle_initial', 'course');
+            }])
             ->whereNotNull('account_id')
             ->where('status', 'active')
             ->latest('created_at')
@@ -103,24 +109,17 @@ class AdminDashboardController extends Controller
             ->map(function ($assessment) {
                 return [
                     'id' => $assessment->id,
-                    'account_id' => $assessment->account_id, // ✅ PRIMARY
+                    'account_id' => $assessment->account_id,
                     'assessment_number' => $assessment->assessment_number,
                     'total_assessment' => (float) $assessment->total_assessment,
                     'created_at' => $assessment->created_at->toISOString(),
                     'student' => $assessment->student ? [
                         'account_id' => $assessment->student->account_id,
                         'name' => $assessment->student->full_name,
+                        'program' => $assessment->student->course, // ✅ Use course directly
                     ] : null,
                 ];
             });
-        
-        // ✅ Resource counts
-        $resourceStats = [
-            'total_fees' => Fee::count(),
-            'active_fees' => Fee::where('is_active', true)->count(),
-            'total_subjects' => Subject::count(),
-            'active_subjects' => Subject::where('is_active', true)->count(),
-        ];
         
         return Inertia::render('Admin/Dashboard', [
             'stats' => [

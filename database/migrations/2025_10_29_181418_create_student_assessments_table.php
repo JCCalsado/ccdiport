@@ -11,12 +11,15 @@ return new class extends Migration
         Schema::create('student_assessments', function (Blueprint $table) {
             $table->id();
             $table->foreignId('user_id')->constrained()->onDelete('cascade');
+            $table->string('account_id', 50)->nullable()->index();
+            // ✅ REMOVED: curriculum_id foreign key
             $table->string('assessment_number')->unique(); // e.g., ASS-2025-0001
             $table->string('year_level');
             $table->string('semester');
             $table->string('school_year');
             $table->decimal('tuition_fee', 12, 2)->default(0);
             $table->decimal('other_fees', 12, 2)->default(0);
+            $table->decimal('registration_fee', 12, 2)->default(0);
             $table->decimal('total_assessment', 12, 2)->default(0);
             $table->json('subjects')->nullable(); // Store enrolled subjects
             $table->json('fee_breakdown')->nullable(); // Store fee breakdown

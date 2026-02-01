@@ -123,8 +123,8 @@ class AccountingDashboardController extends Controller
         // ============================================
         
         $recentAssessments = StudentAssessment::with(['student' => function($query) {
-                $query->select('id', 'account_id', 'student_id', 'first_name', 'last_name', 'middle_initial');
-            }, 'curriculum.program'])
+                $query->select('id', 'account_id', 'student_id', 'first_name', 'last_name', 'middle_initial', 'course');
+            }])
             ->whereNotNull('account_id')
             ->where('status', 'active')
             ->latest('created_at')
@@ -135,17 +135,12 @@ class AccountingDashboardController extends Controller
                     'id' => $assessment->id,
                     'account_id' => $assessment->account_id,
                     'assessment_number' => $assessment->assessment_number,
-                    'school_year' => $assessment->school_year,
-                    'semester' => $assessment->semester,
                     'total_assessment' => (float) $assessment->total_assessment,
                     'created_at' => $assessment->created_at->toISOString(),
                     'student' => $assessment->student ? [
                         'account_id' => $assessment->student->account_id,
-                        'student_id' => $assessment->student->student_id,
                         'name' => $assessment->student->full_name,
-                    ] : null,
-                    'curriculum' => $assessment->curriculum ? [
-                        'program' => $assessment->curriculum->program->full_name ?? 'N/A',
+                        'program' => $assessment->student->course, // ✅ Use course directly
                     ] : null,
                 ];
             });

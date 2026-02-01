@@ -11,7 +11,8 @@ return new class extends Migration
         Schema::create('student_payment_terms', function (Blueprint $table) {
             $table->id();
             $table->foreignId('user_id')->constrained()->onDelete('cascade');
-            $table->foreignId('curriculum_id')->nullable()->constrained()->onDelete('set null');
+            $table->string('account_id', 50)->nullable()->index();
+            // ✅ REMOVED: curriculum_id foreign key
             $table->string('school_year');
             $table->string('semester');
             $table->string('term_name'); // 'Registration', 'Prelim', 'Midterm', etc.

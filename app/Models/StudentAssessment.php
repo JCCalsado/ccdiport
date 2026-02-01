@@ -10,7 +10,6 @@ class StudentAssessment extends Model
     protected $fillable = [
         'account_id',           // ✅ PRIMARY IDENTIFIER
         'user_id',              // ⚠️ Backward compatibility
-        'curriculum_id',
         'assessment_number',
         'year_level',
         'semester',
@@ -21,7 +20,6 @@ class StudentAssessment extends Model
         'total_assessment',
         'subjects',
         'fee_breakdown',
-        'payment_terms',
         'status',
         'created_by',
     ];
@@ -33,7 +31,6 @@ class StudentAssessment extends Model
         'total_assessment' => 'decimal:2',
         'subjects' => 'array',
         'fee_breakdown' => 'array',
-        'payment_terms' => 'array',
     ];
 
     // ============================================

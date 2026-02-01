@@ -10,7 +10,6 @@ class StudentPaymentTerm extends Model
     protected $fillable = [
         'account_id',     // ✅ PRIMARY IDENTIFIER
         'user_id',        // ⚠️ Backward compatibility
-        'curriculum_id',
         'school_year',
         'semester',
         'term_name',

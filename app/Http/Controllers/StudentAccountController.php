@@ -31,9 +31,8 @@ class StudentAccountController extends Controller
 
         $accountId = $student->account_id;
 
-        // ✅ Get latest assessment by account_id
+        // ✅ Get latest assessment by account_id (NO curriculum relationship)
         $assessment = StudentAssessment::byAccountId($accountId)
-            ->with('curriculum.program')
             ->where('status', 'active')
             ->latest()
             ->first();
@@ -65,10 +64,10 @@ class StudentAccountController extends Controller
             ->sum('amount');
 
         return Inertia::render('Student/AccountOverview', [
-            'account_id' => $accountId, // ✅ Pass account_id to frontend
+            'account_id' => $accountId,
             'student' => [
                 'id' => $student->id,
-                'account_id' => $accountId, // ✅ Include in student data
+                'account_id' => $accountId,
                 'student_id' => $student->student_id,
                 'name' => $student->full_name,
                 'email' => $student->email,
@@ -94,13 +93,6 @@ class StudentAccountController extends Controller
                 'status' => $assessment->status,
                 'subjects' => $assessment->subjects ?? [],
                 'fee_breakdown' => $assessment->fee_breakdown ?? [],
-                'curriculum' => $assessment->curriculum ? [
-                    'id' => $assessment->curriculum->id,
-                    'program' => [
-                        'name' => $assessment->curriculum->program->name ?? 'N/A',
-                        'major' => $assessment->curriculum->program->major ?? null,
-                    ],
-                ] : null,
             ] : null,
             'paymentTerms' => $paymentTerms->map(fn($term) => [
                 'id' => $term->id,
