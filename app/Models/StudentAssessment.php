@@ -50,11 +50,6 @@ class StudentAssessment extends Model
         return $this->belongsTo(User::class); // ⚠️ Backward compatibility
     }
 
-    public function curriculum(): BelongsTo
-    {
-        return $this->belongsTo(Curriculum::class);
-    }
-
     public function creator(): BelongsTo
     {
         return $this->belongsTo(User::class, 'created_by');
