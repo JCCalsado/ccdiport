@@ -67,10 +67,8 @@ Route::middleware(['auth', 'verified', 'role:admin,accounting'])->group(function
     // ✅ Student Archive - Update student by account_id
     Route::put('students/{accountId}', [StudentController::class, 'update'])->name('students.update');
     
-    // ✅ Student Archive - Delete/Deactivate student by account_id
     Route::delete('students/{accountId}', [StudentController::class, 'destroy'])->name('students.destroy');
     
-    // ✅ Student Archive - Record payment by account_id
     Route::post('students/{accountId}/payments', [StudentController::class, 'storePayment'])
         ->name('students.payments.store');
 });
