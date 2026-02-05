@@ -1,0 +1,10 @@
+NEW PAYMENT BREAKDOWN STRUCTURE:
+Total Assessment: ₱00.00
+
+Upon Registration: ₱00.00 (42.15%)
+Prelim:           ₱00.00 (17.86%)
+Midterm:          ₱00.00 (17.86%)
+Semi-Final:       ₱00.00 (14.88%)
+Final:            ₱00.00 ( 7.26%)
+─────────────────────────────────
+TOTAL:            ₱00.00 (100%)

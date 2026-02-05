@@ -21,19 +21,32 @@ return new class extends Migration
                   ->on('students')
                   ->onDelete('cascade');
             
+            $table->unsignedBigInteger('user_id')->nullable(); // Backward compatibility
+            $table->foreign('user_id')
+                  ->references('id')
+                  ->on('users')
+                  ->onDelete('cascade');
+            
             $table->unsignedBigInteger('assessment_id');
             $table->foreign('assessment_id')
                   ->references('id')
                   ->on('student_assessments')
                   ->onDelete('cascade');
             
-            // Payment Term Details
-            $table->string('term_name'); // Prelim, Midterm, Semi-Final, Final, Clearance
+            // Term Details
+            $table->string('school_year')->nullable(); // e.g., "2025-2026"
+            $table->string('semester')->nullable(); // e.g., "1st Sem"
+            $table->string('term_name'); // Upon Registration, Prelim, Midterm, etc.
+            $table->integer('term_order')->default(0); // ✅ ADDED
             $table->date('due_date');
+            
+            // Financial Details
             $table->decimal('amount', 10, 2);
-            $table->enum('status', ['pending', 'paid', 'partial', 'overdue'])->default('pending');
             $table->decimal('paid_amount', 10, 2)->default(0);
-            $table->decimal('balance', 10, 2);
+            $table->decimal('balance', 10, 2); // ✅ Auto-calculated
+            
+            // Status & Tracking
+            $table->enum('status', ['pending', 'paid', 'partial', 'overdue'])->default('pending');
             $table->timestamp('payment_date')->nullable();
             $table->string('reference_number')->nullable();
             $table->text('remarks')->nullable();
@@ -42,9 +55,11 @@ return new class extends Migration
             
             // Indexes
             $table->index('account_id');
+            $table->index('user_id');
             $table->index('assessment_id');
             $table->index('status');
             $table->index('due_date');
+            $table->index(['account_id', 'status']); // Composite for common queries
         });
     }
 
