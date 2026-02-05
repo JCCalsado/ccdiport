@@ -14,7 +14,7 @@ return new class extends Migration
         Schema::create('student_payment_terms', function (Blueprint $table) {
             $table->id();
             
-            // Use account_id instead of student_id
+            // Foreign Keys
             $table->string('account_id', 50);
             $table->foreign('account_id')
                   ->references('account_id')
@@ -27,6 +27,7 @@ return new class extends Migration
                   ->on('student_assessments')
                   ->onDelete('cascade');
             
+            // Payment Term Details
             $table->string('term_name'); // Prelim, Midterm, Semi-Final, Final, Clearance
             $table->date('due_date');
             $table->decimal('amount', 10, 2);
@@ -39,8 +40,9 @@ return new class extends Migration
             
             $table->timestamps();
             
-            // Indexes for better query performance
+            // Indexes
             $table->index('account_id');
+            $table->index('assessment_id');
             $table->index('status');
             $table->index('due_date');
         });

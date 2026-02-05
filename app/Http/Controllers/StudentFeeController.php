@@ -680,6 +680,7 @@ class StudentFeeController extends Controller
             StudentPaymentTerm::create([
                 'account_id' => $student->account_id,
                 'user_id' => $student->user_id,
+                // ✅ REMOVED: curriculum_id
                 'school_year' => $assessment->school_year,
                 'semester' => $assessment->semester,
                 'term_name' => $term['name'],

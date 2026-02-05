@@ -2,108 +2,84 @@
 
 namespace App\Models;
 
+use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
-use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class StudentPaymentTerm extends Model
 {
+    use HasFactory;
+
+    /**
+     * The attributes that are mass assignable.
+     *
+     * @var array<int, string>
+     */
     protected $fillable = [
-        'account_id',     // ✅ PRIMARY IDENTIFIER
-        'user_id',        // ⚠️ Backward compatibility
-        'school_year',
-        'semester',
+        'account_id',  // Changed from student_id
+        'assessment_id',
         'term_name',
-        'term_order',
-        'amount',
         'due_date',
+        'amount',
         'status',
         'paid_amount',
+        'balance',
+        'payment_date',
+        'reference_number',
+        'remarks',
     ];
 
+    /**
+     * The attributes that should be cast.
+     *
+     * @var array<string, string>
+     */
     protected $casts = [
+        'due_date' => 'date',
+        'payment_date' => 'datetime',
         'amount' => 'decimal:2',
         'paid_amount' => 'decimal:2',
-        'due_date' => 'date',
+        'balance' => 'decimal:2',
     ];
 
-    protected $appends = [
-        'remaining_balance',
-    ];
-
-    // ============================================
-    // RELATIONSHIPS
-    // ============================================
-
-    public function student(): BelongsTo
+    /**
+     * Get the student that owns the payment term.
+     * Uses account_id as the foreign key.
+     */
+    public function student()
     {
         return $this->belongsTo(Student::class, 'account_id', 'account_id');
     }
 
-    public function user(): BelongsTo
+    /**
+     * Get the assessment that this payment term belongs to.
+     */
+    public function assessment()
     {
-        return $this->belongsTo(User::class); // ⚠️ Backward compatibility
+        return $this->belongsTo(StudentAssessment::class, 'assessment_id');
     }
 
-    // ============================================
-    // COMPUTED ATTRIBUTES
-    // ============================================
-
-    public function getRemainingBalanceAttribute(): float
-    {
-        return (float) ($this->amount - $this->paid_amount);
-    }
-
-    // ============================================
-    // HELPER METHODS
-    // ============================================
-
-    public function isFullyPaid(): bool
-    {
-        return $this->paid_amount >= $this->amount;
-    }
-
-    public function isOverdue(): bool
-    {
-        return $this->due_date 
-            && $this->due_date->isPast() 
-            && !$this->isFullyPaid();
-    }
-
-    // ============================================
-    // SCOPES
-    // ============================================
-
-    public function scopeByAccountId($query, string $accountId)
-    {
-        return $query->where('account_id', $accountId);
-    }
-
-    public function scopeUnpaid($query)
-    {
-        return $query->where('status', '!=', 'paid')
-                     ->whereRaw('paid_amount < amount');
-    }
-
-    public function scopeForTerm($query, $schoolYear, $semester)
-    {
-        return $query->where('school_year', $schoolYear)
-                     ->where('semester', $semester);
-    }
-
-    public function scopeOverdue($query)
-    {
-        return $query->where('due_date', '<', now())
-                     ->where('status', '!=', 'paid')
-                     ->whereRaw('paid_amount < amount');
-    }
-
+    /**
+     * Scope a query to only include pending payments.
+     */
     public function scopePending($query)
     {
         return $query->where('status', 'pending');
     }
 
-    public function scopePartial($query)
+    /**
+     * Scope a query to only include paid payments.
+     */
+    public function scopePaid($query)
     {
-        return $query->where('status', 'partial');
+        return $query->where('status', 'paid');
+    }
+
+    /**
+     * Scope a query to only include overdue payments.
+     */
+    public function scopeOverdue($query)
+    {
+        return $query->where('status', 'pending')
+                     ->where('due_date', '<', now());
     }
 }
