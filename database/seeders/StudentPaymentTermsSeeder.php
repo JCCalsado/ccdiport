@@ -41,21 +41,50 @@ class StudentPaymentTermsSeeder extends Seeder
                 ->where('assessment_id', $assessment->id)
                 ->delete();
 
-            // Create 5 payment terms (Prelim, Midterm, Semi-Final, Final, Clearance)
+            $totalAmount = $assessment->total_assessment;
+
+            // Calculate payment breakdown based on percentages
+            $uponRegistration = round($totalAmount * 0.4215, 2); // 42.15%
+            $prelim = round($totalAmount * 0.1786, 2);           // 17.86%
+            $midterm = round($totalAmount * 0.1786, 2);          // 17.86%
+            $semiFinal = round($totalAmount * 0.1488, 2);        // 14.88%
+            
+            // Final gets the remaining amount to ensure exact total
+            $final = $totalAmount - ($uponRegistration + $prelim + $midterm + $semiFinal);
+
+            // Create payment terms with new structure
             $terms = [
-                ['name' => 'Prelim', 'percentage' => 0.20],
-                ['name' => 'Midterm', 'percentage' => 0.20],
-                ['name' => 'Semi-Final', 'percentage' => 0.20],
-                ['name' => 'Final', 'percentage' => 0.20],
-                ['name' => 'Clearance', 'percentage' => 0.20],
+                [
+                    'name' => 'Upon Registration',
+                    'amount' => $uponRegistration,
+                    'months_offset' => 0, // Due immediately
+                ],
+                [
+                    'name' => 'Prelim',
+                    'amount' => $prelim,
+                    'months_offset' => 1,
+                ],
+                [
+                    'name' => 'Midterm',
+                    'amount' => $midterm,
+                    'months_offset' => 2,
+                ],
+                [
+                    'name' => 'Semi-Final',
+                    'amount' => $semiFinal,
+                    'months_offset' => 3,
+                ],
+                [
+                    'name' => 'Final',
+                    'amount' => $final,
+                    'months_offset' => 4,
+                ],
             ];
 
-            $totalAmount = $assessment->total_assessment; // ← Fixed column name
             $currentDate = Carbon::now();
 
-            foreach ($terms as $index => $term) {
-                $amount = round($totalAmount * $term['percentage'], 2);
-                $dueDate = $currentDate->copy()->addMonths($index + 1);
+            foreach ($terms as $term) {
+                $dueDate = $currentDate->copy()->addMonths($term['months_offset']);
 
                 // Randomly assign status (70% pending, 20% paid, 10% overdue)
                 $random = rand(1, 100);
@@ -65,7 +94,7 @@ class StudentPaymentTermsSeeder extends Seeder
                     $paymentDate = null;
                 } elseif ($random <= 90) {
                     $status = 'paid';
-                    $paidAmount = $amount;
+                    $paidAmount = $term['amount'];
                     $paymentDate = $dueDate->copy()->subDays(rand(1, 7));
                 } else {
                     $status = 'overdue';
@@ -79,10 +108,10 @@ class StudentPaymentTermsSeeder extends Seeder
                     'assessment_id' => $assessment->id,
                     'term_name' => $term['name'],
                     'due_date' => $dueDate,
-                    'amount' => $amount,
+                    'amount' => $term['amount'],
                     'status' => $status,
                     'paid_amount' => $paidAmount,
-                    'balance' => $amount - $paidAmount,
+                    'balance' => $term['amount'] - $paidAmount,
                     'payment_date' => $paymentDate,
                     'reference_number' => $status === 'paid' ? 'REF-' . strtoupper(uniqid()) : null,
                     'remarks' => null,
