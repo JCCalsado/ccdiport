@@ -49,7 +49,7 @@ class ProfileController extends Controller
             $userData['faculty'] = $user->faculty;
         }
 
-        return Inertia::render('Settings/Profile', [
+        return Inertia::render('settings/Profile', [
             'user' => $userData,
             'mustVerifyEmail' => method_exists($user, 'hasVerifiedEmail')
                 ? !$user->hasVerifiedEmail()

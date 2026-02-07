@@ -20,6 +20,8 @@ use App\Http\Controllers\StudentPaymentController;
 use App\Http\Controllers\PaymentGateways\GCashPaymentController;
 use App\Http\Controllers\PaymentGateways\MayaPaymentController;
 use App\Http\Controllers\PaymentGateways\BankTransferController;
+use App\Http\Controllers\Admin\PaymentGatewayController;
+use App\Http\Controllers\Settings\ProfileController as SettingsProfileController;
 use App\Models\OfficialReceipt;
 
 // ============================================
@@ -305,6 +307,17 @@ Route::prefix('webhooks')->name('webhooks.')->group(function () {
     
     // Test endpoint (local only)
     Route::get('test', [WebhookController::class, 'test'])->name('test');
+});
+
+// ============================================
+// SUBJECT MANAGEMENT (LEGACY - DEPRECATED)
+// ⚠️  These routes exist for backward compatibility only
+// ⚠️  New assessments should use direct fee assignment
+// ============================================
+
+Route::middleware(['auth', 'verified', 'role:admin,accounting'])->group(function () {
+    Route::resource('subjects', App\Http\Controllers\SubjectController::class)
+        ->except(['show']); // No need for individual subject view
 });
 
 // ============================================
