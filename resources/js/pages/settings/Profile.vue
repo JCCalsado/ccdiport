@@ -37,7 +37,6 @@ type AppPageProps = Page['props'] & {
 const page = usePage<AppPageProps>()
 const user = page.props.auth.user
 
-// Determine user role
 const userRole = computed(() => {
   const role = (user as any).role
   if (!role) return 'student'
@@ -49,7 +48,6 @@ const isStudent = computed(() => userRole.value === 'student')
 const isAccountingOrAdmin = computed(() => ['accounting', 'admin'].includes(userRole.value))
 const isAdmin = computed(() => userRole.value === 'admin')
 
-// Normalize status (supports string or enum-like object)
 const initialStatus = (() => {
   const s = (user as any).status
   if (!s) return 'active'
@@ -57,13 +55,10 @@ const initialStatus = (() => {
   return s.value ?? s.name ?? 'active'
 })()
 
-// Format birthday for date input (YYYY-MM-DD)
 const formatBirthday = (birthday: any) => {
   if (!birthday) return ''
   if (typeof birthday === 'string') {
-    // If it's already in YYYY-MM-DD format, return as is
     if (/^\d{4}-\d{2}-\d{2}$/.test(birthday)) return birthday
-    // If it's a different format, try to parse it
     try {
       const date = new Date(birthday)
       return date.toISOString().split('T')[0]
@@ -74,7 +69,6 @@ const formatBirthday = (birthday: any) => {
   return ''
 }
 
-// Main form with split name fields
 const form = useForm({
   last_name: (user as any).last_name ?? '',
   first_name: (user as any).first_name ?? '',
@@ -83,18 +77,16 @@ const form = useForm({
   birthday: formatBirthday((user as any).birthday),
   address: (user as any).address ?? '',
   phone: (user as any).phone ?? '',
-  // Student-specific fields
   student_id: (user as any).student_id ?? '',
   course: (user as any).course ?? '',
   year_level: (user as any).year_level ?? '',
-  // Staff-specific fields
   faculty: (user as any).faculty ?? '',
   status: initialStatus,
 })
 
-// PROFILE PICTURE handling
+// ✅ FIX: Profile Picture State
 const profilePicturePreview = ref<string | null>(
-  user.profile_picture ? `/storage/${user.profile_picture}` : null
+  (user as any).profile_picture ? `/storage/${(user as any).profile_picture}` : null
 )
 const profilePictureError = ref<string | undefined>()
 
@@ -113,6 +105,20 @@ const updateProfilePicturePreview = (event: Event) => {
   if (!target.files || target.files.length === 0) return
 
   const file = target.files[0]
+  
+  // ✅ Validate file type
+  const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp']
+  if (!allowedTypes.includes(file.type)) {
+    profilePictureError.value = 'Please select a valid image file (JPG, PNG, or WebP)'
+    return
+  }
+
+  // ✅ Validate file size (2MB)
+  if (file.size > 2048 * 1024) {
+    profilePictureError.value = 'Image must be smaller than 2MB'
+    return
+  }
+
   profilePictureForm.profile_picture = file
 
   const reader = new FileReader()
@@ -121,10 +127,16 @@ const updateProfilePicturePreview = (event: Event) => {
   }
   reader.readAsDataURL(file)
 
+  // ✅ CRITICAL FIX: Use correct route name
   profilePictureForm.post(route('profile.update-picture'), {
     forceFormData: true,
+    preserveScroll: true,
     onError: errors => {
-      profilePictureError.value = (errors as any).profile_picture ?? undefined
+      profilePictureError.value = (errors as any).profile_picture ?? 'Failed to upload image'
+      // Reset preview on error
+      profilePicturePreview.value = (user as any).profile_picture 
+        ? `/storage/${(user as any).profile_picture}` 
+        : null
     },
     onSuccess: () => {
       profilePictureError.value = undefined
@@ -133,31 +145,35 @@ const updateProfilePicturePreview = (event: Event) => {
 }
 
 const removeProfilePicture = () => {
+  // ✅ CRITICAL FIX: Use correct route name
   router.delete(route('profile.remove-picture'), {
+    preserveScroll: true,
     onSuccess: () => {
       profilePicturePreview.value = null
+      profilePictureError.value = undefined
+    },
+    onError: () => {
+      profilePictureError.value = 'Failed to remove image'
     },
   })
 }
 
 const hasProfilePicture = computed(() => !!profilePicturePreview.value)
 
-// Get display initial for profile picture
 const profileInitial = computed(() => {
   if (form.first_name) return form.first_name.charAt(0).toUpperCase()
   if (user.name) return user.name.charAt(0).toUpperCase()
   return '?'
 })
 
-// Course options
 const courseOptions = [
+  'BS Electrical Engineering Technology',
+  'BS Electronics Engineering Technology',
   'BS Computer Science',
   'BS Information Technology',
   'BS Accountancy',
-  'BS Business Administration',
 ]
 
-// Year level options
 const yearLevelOptions = [
   '1st Year',
   '2nd Year',
@@ -172,38 +188,31 @@ const yearLevelOptions = [
 
     <SettingsLayout>
       <div class="flex flex-col space-y-6">
-        <!-- Profile form -->
-        <Form
-          :method="'patch'"
-          :action="route('profile.update')"
-          :model="form"
-          class="space-y-6"
-          v-slot="{ errors, processing, recentlySuccessful }"
-        >
-          <!-- Profile Picture -->
-          <div class="flex flex-col space-y-6 mb-8">
-            <HeadingSmall title="Profile Picture" description="Update your profile picture" />
-            <div class="flex items-center space-x-6">
-              <div class="shrink-0">
-                <img
-                  v-if="profilePicturePreview"
-                  :src="profilePicturePreview"
-                  class="h-20 w-20 rounded-full object-cover border"
-                  alt="Profile preview"
-                />
-                <div v-else class="h-20 w-20 rounded-full bg-muted flex items-center justify-center border">
-                  <span class="text-lg font-medium text-muted-foreground">
-                    {{ profileInitial }}
-                  </span>
-                </div>
+        <!-- Profile Picture Section -->
+        <div class="flex flex-col space-y-6 mb-8">
+          <HeadingSmall title="Profile Picture" description="Update your profile picture" />
+          <div class="flex items-center space-x-6">
+            <div class="shrink-0">
+              <img
+                v-if="profilePicturePreview"
+                :src="profilePicturePreview"
+                class="h-20 w-20 rounded-full object-cover border-2 border-gray-200"
+                alt="Profile preview"
+              />
+              <div v-else class="h-20 w-20 rounded-full bg-muted flex items-center justify-center border-2 border-gray-200">
+                <span class="text-lg font-medium text-muted-foreground">
+                  {{ profileInitial }}
+                </span>
               </div>
-              <div>
+            </div>
+            <div class="flex flex-col space-y-2">
+              <div class="flex items-center space-x-2">
                 <form @submit.prevent>
                   <input
                     ref="profilePictureInput"
                     type="file"
                     class="hidden"
-                    accept="image/*"
+                    accept="image/jpeg,image/jpg,image/png,image/webp"
                     @change="updateProfilePicturePreview"
                     autocomplete="off"
                   />
@@ -214,25 +223,35 @@ const yearLevelOptions = [
                     :disabled="profilePictureForm.processing"
                   >
                     <span v-if="profilePictureForm.processing">Uploading...</span>
-                    <span v-else>Select New Photo</span>
+                    <span v-else>{{ hasProfilePicture ? 'Change Photo' : 'Upload Photo' }}</span>
                   </Button>
-                  <div v-if="hasProfilePicture" class="mt-2">
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      @click="removeProfilePicture"
-                      :disabled="profilePictureForm.processing"
-                    >
-                      Remove
-                    </Button>
-                  </div>
                 </form>
-                <InputError class="mt-2" :message="profilePictureError" />
+                <Button
+                  v-if="hasProfilePicture"
+                  type="button"
+                  variant="ghost"
+                  @click="removeProfilePicture"
+                  :disabled="profilePictureForm.processing"
+                >
+                  Remove
+                </Button>
               </div>
+              <p class="text-xs text-muted-foreground">
+                JPG, PNG or WebP. Max size 2MB.
+              </p>
+              <InputError :message="profilePictureError" />
             </div>
           </div>
+        </div>
 
+        <!-- Profile Information Form -->
+        <Form
+          :method="'patch'"
+          :action="route('profile.update')"
+          :model="form"
+          class="space-y-6"
+          v-slot="{ errors, processing, recentlySuccessful }"
+        >
           <HeadingSmall 
             title="Profile information" 
             :description="isStudent ? 'Update your student account information' : 'Update your account information'" 
@@ -249,7 +268,7 @@ const yearLevelOptions = [
               required 
               placeholder="Dela Cruz" 
             />
-            <InputError class="mt-2" :message="errors.last_name" />
+            <InputError :message="errors.last_name" />
           </div>
 
           <!-- First Name -->
@@ -263,7 +282,7 @@ const yearLevelOptions = [
               required 
               placeholder="Juan" 
             />
-            <InputError class="mt-2" :message="errors.first_name" />
+            <InputError :message="errors.first_name" />
           </div>
 
           <!-- Middle Initial -->
@@ -277,7 +296,7 @@ const yearLevelOptions = [
               placeholder="P"
               maxlength="10"
             />
-            <InputError class="mt-2" :message="errors.middle_initial" />
+            <InputError :message="errors.middle_initial" />
           </div>
 
           <!-- Student ID (Students Only) -->
@@ -289,8 +308,11 @@ const yearLevelOptions = [
               v-model="form.student_id" 
               autocomplete="off" 
               placeholder="2025-0001" 
+              disabled
+              class="bg-gray-50"
             />
-            <InputError class="mt-2" :message="errors.student_id" />
+            <p class="text-xs text-muted-foreground">Student ID cannot be changed</p>
+            <InputError :message="errors.student_id" />
           </div>
 
           <!-- Email -->
@@ -305,7 +327,7 @@ const yearLevelOptions = [
               required 
               placeholder="student@ccdi.edu.ph" 
             />
-            <InputError class="mt-2" :message="errors.email" />
+            <InputError :message="errors.email" />
           </div>
 
           <!-- Birthday -->
@@ -319,7 +341,7 @@ const yearLevelOptions = [
               autocomplete="bday"
               :max="new Date().toISOString().split('T')[0]"
             />
-            <InputError class="mt-2" :message="errors.birthday" />
+            <InputError :message="errors.birthday" />
           </div>
 
           <!-- Phone -->
@@ -332,7 +354,7 @@ const yearLevelOptions = [
               autocomplete="tel" 
               placeholder="09171234567" 
             />
-            <InputError class="mt-2" :message="errors.phone" />
+            <InputError :message="errors.phone" />
           </div>
 
           <!-- Address -->
@@ -345,7 +367,7 @@ const yearLevelOptions = [
               autocomplete="street-address" 
               placeholder="Sorsogon City" 
             />
-            <InputError class="mt-2" :message="errors.address" />
+            <InputError :message="errors.address" />
           </div>
 
           <!-- Faculty (Accounting/Admin Only) -->
@@ -358,7 +380,7 @@ const yearLevelOptions = [
               autocomplete="organization" 
               placeholder="e.g., Accounting Department" 
             />
-            <InputError class="mt-2" :message="errors.faculty" />
+            <InputError :message="errors.faculty" />
           </div>
 
           <!-- Course (Students Only) -->
@@ -369,14 +391,14 @@ const yearLevelOptions = [
               name="course"
               v-model="form.course"
               required
-              class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              class="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
             >
               <option value="">Select Course</option>
               <option v-for="course in courseOptions" :key="course" :value="course">
                 {{ course }}
               </option>
             </select>
-            <InputError class="mt-2" :message="errors.course" />
+            <InputError :message="errors.course" />
           </div>
 
           <!-- Year Level (Students Only) -->
@@ -387,14 +409,14 @@ const yearLevelOptions = [
               name="year_level"
               v-model="form.year_level"
               required
-              class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              class="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
             >
               <option value="">Select Year Level</option>
               <option v-for="year in yearLevelOptions" :key="year" :value="year">
                 {{ year }}
               </option>
             </select>
-            <InputError class="mt-2" :message="errors.year_level" />
+            <InputError :message="errors.year_level" />
           </div>
 
           <!-- Status (Students Only, Admin-editable) -->
@@ -405,7 +427,7 @@ const yearLevelOptions = [
                 id="status"
                 name="status"
                 v-model="form.status"
-                class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                class="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
                 autocomplete="off"
               >
                 <option value="active">Active</option>
@@ -414,21 +436,21 @@ const yearLevelOptions = [
               </select>
             </div>
             <div v-else>
-              <div class="w-full rounded border px-3 py-2 bg-gray-50 text-gray-700 capitalize">
+              <div class="flex h-10 w-full items-center rounded-md border border-input bg-gray-50 px-3 py-2 text-sm capitalize text-gray-700">
                 {{ form.status }}
               </div>
             </div>
-            <InputError class="mt-2" :message="errors.status" />
+            <InputError :message="errors.status" />
           </div>
 
-          <!-- Email verification -->
-          <div v-if="mustVerifyEmail && !user.email_verified_at">
-            <p class="-mt-4 text-sm text-muted-foreground">
+          <!-- Email Verification -->
+          <div v-if="mustVerifyEmail && !(user as any).email_verified_at">
+            <p class="text-sm text-muted-foreground">
               Your email address is unverified.
               <Link
                 :href="send()"
                 as="button"
-                class="text-foreground underline decoration-neutral-300 underline-offset-4 transition-colors duration-300 ease-out hover:decoration-current! dark:decoration-neutral-500"
+                class="text-foreground underline decoration-neutral-300 underline-offset-4 transition-colors duration-300 ease-out hover:decoration-current dark:decoration-neutral-500"
               >
                 Click here to resend the verification email.
               </Link>
@@ -438,16 +460,20 @@ const yearLevelOptions = [
             </div>
           </div>
 
-          <!-- Save -->
+          <!-- Save Button -->
           <div class="flex items-center gap-4">
-            <Button type="submit" :disabled="processing">Save</Button>
+            <Button type="submit" :disabled="processing">
+              {{ processing ? 'Saving...' : 'Save Changes' }}
+            </Button>
             <Transition
               enter-active-class="transition ease-in-out"
               enter-from-class="opacity-0"
               leave-active-class="transition ease-in-out"
               leave-to-class="opacity-0"
             >
-              <p v-show="recentlySuccessful" class="text-sm text-neutral-600">Saved.</p>
+              <p v-show="recentlySuccessful" class="text-sm text-green-600 font-medium">
+                ✓ Saved successfully
+              </p>
             </Transition>
           </div>
         </Form>

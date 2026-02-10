@@ -22,7 +22,6 @@ class ProfileController extends Controller
     {
         $user = $request->user()->load('student');
         
-        // ✅ Include account_id for students
         $userData = [
             'id' => $user->id,
             'last_name' => $user->last_name,
@@ -34,17 +33,16 @@ class ProfileController extends Controller
             'address' => $user->address,
             'role' => $user->role,
             'status' => $user->status,
+            'profile_picture' => $user->profile_picture, // ✅ Add this
         ];
         
-        // ✅ Add student-specific fields including account_id
         if ($user->isStudent() && $user->student) {
-            $userData['account_id'] = $user->student->account_id; // ✅ PRIMARY
+            $userData['account_id'] = $user->student->account_id;
             $userData['student_id'] = $user->student_id;
             $userData['course'] = $user->course;
             $userData['year_level'] = $user->year_level;
         }
         
-        // ✅ Add staff-specific fields
         if ($user->hasRole(['admin', 'accounting'])) {
             $userData['faculty'] = $user->faculty;
         }
@@ -67,7 +65,6 @@ class ProfileController extends Controller
 
         DB::beginTransaction();
         try {
-            // ✅ Update users table
             $userUpdateData = [
                 'last_name' => $validated['last_name'],
                 'first_name' => $validated['first_name'],
@@ -78,29 +75,23 @@ class ProfileController extends Controller
                 'address' => $validated['address'] ?? $user->address,
             ];
 
-            // ✅ Add student-specific fields to users table
             if ($user->isStudent()) {
                 $userUpdateData['student_id'] = $validated['student_id'] ?? $user->student_id;
                 $userUpdateData['course'] = $validated['course'];
                 $userUpdateData['year_level'] = $validated['year_level'];
                 
-                // ✅ Only admin can change student status
                 if (isset($validated['status']) && $request->user()->isAdmin()) {
                     $userUpdateData['status'] = $validated['status'];
                 }
             }
 
-            // ✅ Add faculty for accounting/admin
             if ($user->hasRole(['admin', 'accounting'])) {
                 $userUpdateData['faculty'] = $validated['faculty'] ?? $user->faculty;
             }
 
-            // Update the user
             $user->fill($userUpdateData);
             $user->save();
 
-            // ✅ Update students table if user is a student
-            // ⚠️ CRITICAL: Do NOT allow account_id to be changed
             if ($user->isStudent() && $user->student) {
                 $statusMap = [
                     'active' => 'enrolled',
@@ -109,7 +100,6 @@ class ProfileController extends Controller
                 ];
 
                 $studentData = [
-                    // ✅ CRITICAL: account_id is READ-ONLY, never updated
                     'last_name' => $validated['last_name'],
                     'first_name' => $validated['first_name'],
                     'middle_initial' => $validated['middle_initial'] ?? null,
@@ -122,27 +112,14 @@ class ProfileController extends Controller
                     'year_level' => $validated['year_level'],
                 ];
 
-                // Update status if provided and user is admin
                 if (isset($validated['status']) && $request->user()->isAdmin()) {
                     $studentData['status'] = $statusMap[$validated['status']] ?? $user->student->status;
                 }
 
                 $user->student->update($studentData);
-
-                Log::info('Student record updated', [
-                    'account_id' => $user->student->account_id, // ✅ Log with account_id
-                    'user_id' => $user->id,
-                    'updated_fields' => array_keys($studentData),
-                ]);
             }
 
             DB::commit();
-
-            Log::info('User profile updated', [
-                'user_id' => $user->id,
-                'account_id' => $user->student->account_id ?? null, // ✅ Include in logs
-                'updated_by' => $request->user()->id,
-            ]);
 
             return Redirect::route('profile.edit')
                 ->with('success', 'Profile updated successfully.');
@@ -152,7 +129,6 @@ class ProfileController extends Controller
             
             Log::error('Profile update failed', [
                 'user_id' => $user->id,
-                'account_id' => $user->student->account_id ?? null,
                 'error' => $e->getMessage(),
             ]);
 
@@ -163,12 +139,12 @@ class ProfileController extends Controller
     }
 
     /**
-     * Update profile picture.
+     * ✅ FIX: Update profile picture
      */
     public function updatePicture(Request $request): RedirectResponse
     {
         $request->validate([
-            'profile_picture' => 'required|image|max:2048',
+            'profile_picture' => 'required|image|mimes:jpg,jpeg,png,webp|max:2048', // ✅ Add allowed types
         ]);
 
         $user = $request->user();
@@ -180,22 +156,28 @@ class ProfileController extends Controller
                 Storage::disk('public')->delete($user->profile_picture);
             }
 
-            $path = $request->file('profile_picture')->store('profile_pictures', 'public');
+            $path = $request->file('profile_picture')->store('profile-pictures', 'public');
 
             $user->update(['profile_picture' => $path]);
 
             DB::commit();
 
-            return Redirect::back()->with('success', 'Profile picture updated.');
+            return Redirect::back()->with('success', 'Profile picture updated successfully.');
 
         } catch (\Exception $e) {
             DB::rollBack();
-            return Redirect::back()->withErrors(['error' => 'Failed to update profile picture.']);
+            
+            Log::error('Profile picture update failed', [
+                'user_id' => $user->id,
+                'error' => $e->getMessage(),
+            ]);
+
+            return Redirect::back()->withErrors(['profile_picture' => 'Failed to update profile picture.']);
         }
     }
 
     /**
-     * Remove profile picture.
+     * ✅ FIX: Remove profile picture
      */
     public function removePicture(Request $request): RedirectResponse
     {
@@ -210,10 +192,16 @@ class ProfileController extends Controller
 
             DB::commit();
 
-            return Redirect::back()->with('success', 'Profile picture removed.');
+            return Redirect::back()->with('success', 'Profile picture removed successfully.');
 
         } catch (\Exception $e) {
             DB::rollBack();
+            
+            Log::error('Profile picture removal failed', [
+                'user_id' => $user->id,
+                'error' => $e->getMessage(),
+            ]);
+
             return Redirect::back()->withErrors(['error' => 'Failed to remove profile picture.']);
         }
     }
@@ -223,22 +211,14 @@ class ProfileController extends Controller
      */
     public function destroy(Request $request): RedirectResponse
     {
-        // ✅ CRITICAL: Students with account_id cannot be deleted
         $user = $request->user();
         
         if ($user->isStudent() && $user->student && $user->student->account_id) {
-            Log::warning('Attempted to delete student with account_id', [
-                'account_id' => $user->student->account_id,
-                'user_id' => $user->id,
-                'attempted_by' => $request->user()->id,
-            ]);
-            
             return Redirect::back()->withErrors([
-                'error' => 'Student accounts cannot be deleted. Please contact administration to deactivate your account.'
+                'error' => 'Student accounts cannot be deleted. Please contact administration.'
             ]);
         }
 
-        // For non-students or students without account_id (shouldn't exist)
         $request->validate([
             'password' => ['required', 'current_password'],
         ]);

@@ -1,13 +1,13 @@
 <script setup lang="ts">
 import Heading from '@/components/Heading.vue';
-import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
-import { toUrl, urlIsActive } from '@/lib/utils';
+import { cn } from '@/lib/utils';
 import { appearance } from '@/routes';
 import { edit as editPassword } from '@/routes/password';
 import { edit } from '@/routes/profile';
 import { type NavItem } from '@/types';
 import { Link } from '@inertiajs/vue3';
+import { computed } from 'vue';
 
 const sidebarNavItems: NavItem[] = [
     {
@@ -24,7 +24,17 @@ const sidebarNavItems: NavItem[] = [
     },
 ];
 
-const currentPath = typeof window !== undefined ? window.location.pathname : '';
+// ✅ FIX: Proper SSR-safe current path detection
+const currentPath = computed(() => {
+    if (typeof window === 'undefined') return '';
+    return window.location.pathname;
+});
+
+// ✅ FIX: Proper active state detection
+const isActive = (href: string | { url: string }) => {
+    const targetUrl = typeof href === 'string' ? href : href.url;
+    return currentPath.value === new URL(targetUrl, window.location.origin).pathname;
+};
 </script>
 
 <template>
@@ -33,18 +43,23 @@ const currentPath = typeof window !== undefined ? window.location.pathname : '';
 
         <div class="flex flex-col lg:flex-row lg:space-x-12">
             <aside class="w-full max-w-xl lg:w-48">
-                <nav class="flex flex-col space-y-1 space-x-0">
-                    <Button
+                <nav class="flex flex-col space-y-1">
+                    <!-- ✅ FIX: Remove as-child, make Link the actual button -->
+                    <Link
                         v-for="item in sidebarNavItems"
-                        :key="toUrl(item.href)"
-                        variant="ghost"
-                        :class="['w-full justify-start', { 'bg-muted': urlIsActive(item.href, currentPath) }]"
-                        as-child
+                        :key="typeof item.href === 'string' ? item.href : item.href.url"
+                        :href="item.href"
+                        :class="cn(
+                            'inline-flex items-center justify-start w-full rounded-md px-3 py-2 text-sm font-medium transition-colors',
+                            'hover:bg-accent hover:text-accent-foreground',
+                            'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2',
+                            isActive(item.href)
+                                ? 'bg-accent text-accent-foreground'
+                                : 'text-muted-foreground'
+                        )"
                     >
-                        <Link :href="item.href">
-                            {{ item.title }}
-                        </Link>
-                    </Button>
+                        {{ item.title }}
+                    </Link>
                 </nav>
             </aside>
 
