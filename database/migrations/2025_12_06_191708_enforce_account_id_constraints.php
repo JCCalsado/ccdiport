@@ -26,11 +26,16 @@ return new class extends Migration
             $table->string('account_id', 50)->nullable(false)->change();
         });
 
-        // Step 4: Make account_id NOT NULL on financial tables
-        $tables = ['student_payment_terms', 'student_assessments', 'transactions', 'payments'];
+        // Step 4: Make account_id NOT NULL on financial tables (ONLY if column exists)
+        $tables = ['student_payment_terms', 'student_assessments', 'transactions'];
         
         foreach ($tables as $tableName) {
             if (!Schema::hasTable($tableName)) {
+                continue;
+            }
+
+            // ✅ CHECK if account_id column exists first
+            if (!Schema::hasColumn($tableName, 'account_id')) {
                 continue;
             }
 
@@ -38,10 +43,6 @@ return new class extends Migration
             
             if ($missingInTable > 0) {
                 continue; // Skip if data incomplete
-            }
-
-            if (!Schema::hasColumn($tableName, 'account_id')) {
-                continue;
             }
 
             Schema::table($tableName, function (Blueprint $table) {
@@ -82,7 +83,6 @@ return new class extends Migration
         // Also try specific known foreign keys
         $knownForeignKeys = [
             'transactions' => 'transactions_account_id_foreign',
-            'payments' => 'payments_account_id_foreign',
             'student_payment_terms' => 'student_payment_terms_account_id_foreign',
             'student_assessments' => 'student_assessments_account_id_foreign',
         ];
@@ -98,7 +98,7 @@ return new class extends Migration
 
     protected function addProperIndexes(): void
     {
-        $tables = ['transactions', 'payments', 'student_payment_terms', 'student_assessments'];
+        $tables = ['transactions', 'student_payment_terms', 'student_assessments'];
         
         foreach ($tables as $tableName) {
             if (!Schema::hasTable($tableName)) {
@@ -127,7 +127,7 @@ return new class extends Migration
 
     public function down(): void
     {
-        $tables = ['students', 'student_payment_terms', 'student_assessments', 'transactions', 'payments'];
+        $tables = ['students', 'student_payment_terms', 'student_assessments', 'transactions'];
         
         foreach ($tables as $tableName) {
             if (!Schema::hasTable($tableName)) {

@@ -7,9 +7,6 @@ use Illuminate\Support\Facades\DB;
 
 return new class extends Migration
 {
-    /**
-     * Run the migrations.
-     */
     public function up(): void
     {
         Schema::table('students', function (Blueprint $table) {
@@ -18,7 +15,7 @@ return new class extends Migration
                 $table->string('account_id', 50)
                     ->after('id')
                     ->unique()
-                    ->nullable(); // Temporarily nullable for backfill
+                    ->nullable();
                 
                 $table->index('account_id');
             }
@@ -27,17 +24,10 @@ return new class extends Migration
         // Generate account_id for existing students
         $this->backfillAccountIds();
 
-        // Make account_id required after backfill
-        Schema::table('students', function (Blueprint $table) {
-            $table->string('account_id', 50)
-                ->nullable(false)
-                ->change();
-        });
+        // ❌ REMOVED - DO NOT MAKE IT NOT NULL HERE
+        // The enforce_account_id_constraints migration handles this
     }
 
-    /**
-     * Reverse the migrations.
-     */
     public function down(): void
     {
         Schema::table('students', function (Blueprint $table) {
@@ -48,9 +38,6 @@ return new class extends Migration
         });
     }
 
-    /**
-     * Generate account_id for all existing students
-     */
     protected function backfillAccountIds(): void
     {
         $students = DB::table('students')
@@ -74,20 +61,14 @@ return new class extends Migration
             
             $counter++;
         }
-
-        $this->command->info("✓ Generated account_id for {$students->count()} students");
     }
 
-    /**
-     * Generate unique account_id in format ACC-YYYYMMDD-XXXX
-     */
     protected function generateUniqueAccountId(string $date, int $counter): string
     {
         $prefix = "ACC-{$date}-";
         $number = str_pad($counter, 4, '0', STR_PAD_LEFT);
         $accountId = "{$prefix}{$number}";
 
-        // Ensure uniqueness
         $attempts = 0;
         while (DB::table('students')->where('account_id', $accountId)->exists() && $attempts < 100) {
             $counter++;
@@ -103,9 +84,6 @@ return new class extends Migration
         return $accountId;
     }
 
-    /**
-     * Get next available counter for today's date
-     */
     protected function getNextAccountCounter(string $date): int
     {
         $prefix = "ACC-{$date}-";
