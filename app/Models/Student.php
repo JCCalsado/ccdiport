@@ -9,11 +9,6 @@ class Student extends Model
 {
     use HasFactory;
 
-    /**
-     * The attributes that are mass assignable.
-     *
-     * @var array<int, string>
-     */
     protected $fillable = [
         'student_number',
         'first_name',
@@ -29,11 +24,6 @@ class Student extends Model
         'account_id',
     ];
 
-    /**
-     * The attributes that should be cast.
-     *
-     * @var array<string, string>
-     */
     protected $casts = [
         'birth_date' => 'date',
     ];
@@ -47,7 +37,7 @@ class Student extends Model
     }
 
     /**
-     * Get the user associated with the student.
+     * Get the user associated with the student (via email).
      */
     public function user()
     {
@@ -56,10 +46,17 @@ class Student extends Model
 
     /**
      * Get the assessments for the student.
+     * NOTE: student_assessments uses user_id, not student_id
      */
     public function assessments()
     {
-        return $this->hasMany(StudentAssessment::class);
+        return $this->hasMany(StudentAssessment::class, 'user_id', 'email')
+                    ->where('student_assessments.user_id', function($query) {
+                        $query->select('id')
+                              ->from('users')
+                              ->whereColumn('users.email', 'students.email')
+                              ->limit(1);
+                    });
     }
 
     /**
@@ -67,7 +64,15 @@ class Student extends Model
      */
     public function paymentTerms()
     {
-        return $this->hasMany(StudentPaymentTerm::class);
+        return $this->hasMany(StudentPaymentTerm::class, 'account_id', 'account_id');
+    }
+
+    /**
+     * Get the payments for the student.
+     */
+    public function payments()
+    {
+        return $this->hasMany(Payment::class);
     }
 
     /**

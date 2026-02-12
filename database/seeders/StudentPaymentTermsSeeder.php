@@ -2,10 +2,11 @@
 
 namespace Database\Seeders;
 
-use Illuminate\Database\Seeder;
 use App\Models\Student;
-use App\Models\StudentPaymentTerm;
 use App\Models\StudentAssessment;
+use App\Models\StudentPaymentTerm;
+use App\Models\User;
+use Illuminate\Database\Seeder;
 use Carbon\Carbon;
 
 class StudentPaymentTermsSeeder extends Seeder
@@ -15,114 +16,82 @@ class StudentPaymentTermsSeeder extends Seeder
      */
     public function run(): void
     {
-        $this->command->info('📋 Generating payment terms for students...');
+        echo "📋 Generating payment terms for students...\n";
 
-        // Get all students with their assessments
-        $students = Student::with('assessments')->get();
-
-        if ($students->isEmpty()) {
-            $this->command->warn('⚠️  No students found. Please run StudentsSeeder first.');
+        // Check if there are any assessments
+        $assessments = StudentAssessment::all();
+        
+        if ($assessments->isEmpty()) {
+            echo "⚠️  No assessments found. Skipping payment terms generation.\n";
+            echo "   Run StudentAssessmentSeeder first to create assessments.\n";
             return;
         }
 
-        $termsCreated = 0;
+        echo "   Found " . $assessments->count() . " assessments\n";
 
-        foreach ($students as $student) {
-            // Get the student's latest assessment
-            $assessment = $student->assessments()->latest()->first();
-
-            if (!$assessment) {
-                $this->command->warn("⚠️  No assessment found for student: {$student->first_name} {$student->last_name} ({$student->account_id})");
+        // Generate payment terms for each assessment
+        foreach ($assessments as $assessment) {
+            // Skip if already has payment terms
+            if ($assessment->paymentTerms()->exists()) {
                 continue;
             }
 
-            // Delete existing payment terms for this assessment
-            StudentPaymentTerm::where('account_id', $student->account_id)
-                ->where('assessment_id', $assessment->id)
-                ->delete();
+            // Get the user
+            $user = User::find($assessment->user_id);
+            if (!$user) {
+                echo "   ⚠️  User not found for assessment #{$assessment->id}\n";
+                continue;
+            }
 
+            // Calculate payment terms (e.g., 3 terms)
             $totalAmount = $assessment->total_assessment;
+            $numberOfTerms = 3;
+            $amountPerTerm = round($totalAmount / $numberOfTerms, 2);
 
-            // Calculate payment breakdown based on percentages
-            $uponRegistration = round($totalAmount * 0.4215, 2); // 42.15%
-            $prelim = round($totalAmount * 0.1786, 2);           // 17.86%
-            $midterm = round($totalAmount * 0.1786, 2);          // 17.86%
-            $semiFinal = round($totalAmount * 0.1488, 2);        // 14.88%
-            
-            // Final gets the remaining amount to ensure exact total
-            $final = $totalAmount - ($uponRegistration + $prelim + $midterm + $semiFinal);
+            // Adjust last term to account for rounding
+            $lastTermAmount = $totalAmount - ($amountPerTerm * ($numberOfTerms - 1));
 
-            // Create payment terms with new structure
             $terms = [
                 [
-                    'name' => 'Upon Registration',
-                    'amount' => $uponRegistration,
-                    'months_offset' => 0, // Due immediately
+                    'term_name' => 'Prelim',
+                    'term_order' => 1,
+                    'amount' => $amountPerTerm,
+                    'due_date' => Carbon::parse($assessment->created_at)->addDays(30),
                 ],
                 [
-                    'name' => 'Prelim',
-                    'amount' => $prelim,
-                    'months_offset' => 1,
+                    'term_name' => 'Midterm',
+                    'term_order' => 2,
+                    'amount' => $amountPerTerm,
+                    'due_date' => Carbon::parse($assessment->created_at)->addDays(60),
                 ],
                 [
-                    'name' => 'Midterm',
-                    'amount' => $midterm,
-                    'months_offset' => 2,
-                ],
-                [
-                    'name' => 'Semi-Final',
-                    'amount' => $semiFinal,
-                    'months_offset' => 3,
-                ],
-                [
-                    'name' => 'Final',
-                    'amount' => $final,
-                    'months_offset' => 4,
+                    'term_name' => 'Final',
+                    'term_order' => 3,
+                    'amount' => $lastTermAmount,
+                    'due_date' => Carbon::parse($assessment->created_at)->addDays(90),
                 ],
             ];
 
-            $currentDate = Carbon::now();
-
-            foreach ($terms as $term) {
-                $dueDate = $currentDate->copy()->addMonths($term['months_offset']);
-
-                // Randomly assign status (70% pending, 20% paid, 10% overdue)
-                $random = rand(1, 100);
-                if ($random <= 70) {
-                    $status = 'pending';
-                    $paidAmount = 0;
-                    $paymentDate = null;
-                } elseif ($random <= 90) {
-                    $status = 'paid';
-                    $paidAmount = $term['amount'];
-                    $paymentDate = $dueDate->copy()->subDays(rand(1, 7));
-                } else {
-                    $status = 'overdue';
-                    $paidAmount = 0;
-                    $paymentDate = null;
-                    $dueDate = $currentDate->copy()->subDays(rand(1, 30));
-                }
-
+            foreach ($terms as $termData) {
                 StudentPaymentTerm::create([
-                    'account_id' => $student->account_id,
+                    'account_id' => $assessment->account_id,
+                    'user_id' => $assessment->user_id,
                     'assessment_id' => $assessment->id,
-                    'term_name' => $term['name'],
-                    'due_date' => $dueDate,
-                    'amount' => $term['amount'],
-                    'status' => $status,
-                    'paid_amount' => $paidAmount,
-                    'balance' => $term['amount'] - $paidAmount,
-                    'payment_date' => $paymentDate,
-                    'reference_number' => $status === 'paid' ? 'REF-' . strtoupper(uniqid()) : null,
-                    'remarks' => null,
+                    'school_year' => $assessment->school_year,
+                    'semester' => $assessment->semester,
+                    'term_name' => $termData['term_name'],
+                    'term_order' => $termData['term_order'],
+                    'amount' => $termData['amount'],
+                    'due_date' => $termData['due_date'],
+                    'paid_amount' => 0,
+                    'balance' => $termData['amount'],
+                    'status' => 'pending',
                 ]);
-
-                $termsCreated++;
             }
 
-            $this->command->info("✓ Created payment terms for {$student->first_name} {$student->last_name} ({$student->account_id})");
+            echo "   ✓ Created payment terms for assessment #{$assessment->id}\n";
         }
 
-        $this->command->info("✅ Created {$termsCreated} payment terms for {$students->count()} students!");
+        echo "✅ Payment terms generation completed!\n";
     }
 }

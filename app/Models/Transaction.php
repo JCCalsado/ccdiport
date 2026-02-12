@@ -10,30 +10,29 @@ class Transaction extends Model
     use HasFactory;
 
     /**
-     * The attributes that are mass assignable.
-     *
-     * @var array<int, string>
+     * FIXED: Fillable now matches actual database columns
      */
     protected $fillable = [
-        'account_id',
-        'user_id',
-        'type',
-        'amount',
-        'category',
-        'description',
-        'reference_number',
-        'year',
-        'semester',
-        'status',
+        'account_id',       // ✅ EXISTS
+        'user_id',          // ✅ EXISTS
+        'reference',        // ✅ EXISTS (not reference_number)
+        'payment_channel',  // ✅ EXISTS
+        'kind',             // ✅ EXISTS
+        'year',             // ✅ EXISTS
+        'semester',         // ✅ EXISTS
+        'type',             // ✅ EXISTS
+        'category',         // ✅ EXISTS
+        'amount',           // ✅ EXISTS
+        'status',           // ✅ EXISTS
+        'paid_at',          // ✅ EXISTS
+        'meta',             // ✅ EXISTS
+        'fee_id',           // ✅ EXISTS
     ];
 
-    /**
-     * The attributes that should be cast.
-     *
-     * @var array<string, string>
-     */
     protected $casts = [
         'amount' => 'decimal:2',
+        'paid_at' => 'datetime',
+        'meta' => 'array',
     ];
 
     /**
@@ -50,5 +49,13 @@ class Transaction extends Model
     public function user()
     {
         return $this->belongsTo(User::class);
+    }
+
+    /**
+     * Get the fee associated with the transaction.
+     */
+    public function fee()
+    {
+        return $this->belongsTo(Fee::class);
     }
 }

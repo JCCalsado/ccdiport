@@ -20,14 +20,14 @@ class StudentEnrollment extends Model
         return $this->belongsTo(User::class);
     }
 
-    public function subject(): BelongsTo
-    {
-        return $this->belongsTo(Subject::class);
-    }
+    // public function subject(): BelongsTo
+    // {
+    //     return $this->belongsTo(Subject::class);
+    // }
 
-    // Calculate cost for this enrollment
-    public function getCostAttribute()
-    {
-        return $this->subject->total_cost ?? 0;
-    }
+    // // Calculate cost for this enrollment
+    // public function getCostAttribute()
+    // {
+    //     return $this->subject->total_cost ?? 0;
+    // }
 }

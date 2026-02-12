@@ -9,49 +9,51 @@ class StudentAssessment extends Model
 {
     use HasFactory;
 
-    /**
-     * The table associated with the model.
-     *
-     * @var string
-     */
     protected $table = 'student_assessments';
 
     /**
-     * The attributes that are mass assignable.
-     *
-     * @var array<int, string>
+     * FIXED: Fillable now matches actual database columns
      */
     protected $fillable = [
-        'student_id',
-        'academic_year',
-        'semester',
-        'tuition_fee',
-        'other_fees',
-        'total_assessment',
-        'total_paid',
-        'balance',
-        'status',
+        'user_id',              // ✅ EXISTS
+        'account_id',           // ✅ EXISTS
+        'assessment_number',    // ✅ EXISTS
+        'year_level',           // ✅ EXISTS
+        'semester',             // ✅ EXISTS
+        'school_year',          // ✅ EXISTS
+        'tuition_fee',          // ✅ EXISTS
+        'other_fees',           // ✅ EXISTS
+        'registration_fee',     // ✅ EXISTS
+        'total_assessment',     // ✅ EXISTS
+        'subjects',             // ✅ EXISTS
+        'fee_breakdown',        // ✅ EXISTS
+        'status',               // ✅ EXISTS
+        'created_by',           // ✅ EXISTS
     ];
 
-    /**
-     * The attributes that should be cast.
-     *
-     * @var array<string, string>
-     */
     protected $casts = [
         'tuition_fee' => 'decimal:2',
         'other_fees' => 'decimal:2',
+        'registration_fee' => 'decimal:2',
         'total_assessment' => 'decimal:2',
-        'total_paid' => 'decimal:2',
-        'balance' => 'decimal:2',
+        'subjects' => 'array',
+        'fee_breakdown' => 'array',
     ];
 
     /**
-     * Get the student that owns the assessment.
+     * Get the user (student) that owns the assessment.
      */
     public function student()
     {
-        return $this->belongsTo(Student::class);
+        return $this->belongsTo(User::class, 'user_id');
+    }
+
+    /**
+     * Get the user that owns the assessment (alias).
+     */
+    public function user()
+    {
+        return $this->belongsTo(User::class);
     }
 
     /**
@@ -60,5 +62,13 @@ class StudentAssessment extends Model
     public function paymentTerms()
     {
         return $this->hasMany(StudentPaymentTerm::class, 'assessment_id');
+    }
+
+    /**
+     * Get the creator of the assessment.
+     */
+    public function creator()
+    {
+        return $this->belongsTo(User::class, 'created_by');
     }
 }
