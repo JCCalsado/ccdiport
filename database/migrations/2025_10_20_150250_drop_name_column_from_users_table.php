@@ -12,7 +12,10 @@ return new class extends Migration
     public function up(): void
     {
         Schema::table('users', function (Blueprint $table) {
-            $table->dropColumn('name');
+            // Only drop the old 'name' column if it exists
+            if (Schema::hasColumn('users', 'name')) {
+                $table->dropColumn('name');
+            }
         });
     }
 
@@ -22,6 +25,7 @@ return new class extends Migration
     public function down(): void
     {
         Schema::table('users', function (Blueprint $table) {
+            // Re-add the old 'name' column
             $table->string('name')->after('id');
         });
     }

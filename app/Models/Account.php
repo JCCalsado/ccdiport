@@ -2,23 +2,63 @@
 
 namespace App\Models;
 
+use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
-use Illuminate\Database\Eloquent\Relations\BelongsTo;
-use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class Account extends Model
 {
-    protected $fillable = ['user_id', 'balance'];
+    use HasFactory;
 
-    protected $casts = ['balance' => 'decimal:2'];
+    /**
+     * The attributes that are mass assignable.
+     *
+     * @var array<int, string>
+     */
+    protected $fillable = [
+        'user_id',
+        'account_number',
+        'balance',
+        'status',
+    ];
 
-    public function user(): BelongsTo
+    /**
+     * The attributes that should be cast.
+     *
+     * @var array<string, string>
+     */
+    protected $casts = [
+        'balance' => 'decimal:2',
+    ];
+
+    /**
+     * Get the user that owns the account.
+     */
+    public function user()
     {
         return $this->belongsTo(User::class);
     }
 
-    public function transactions(): HasMany
+    /**
+     * Get the transactions for the account.
+     */
+    public function transactions()
     {
         return $this->hasMany(Transaction::class);
+    }
+
+    /**
+     * Get the student associated with this account.
+     */
+    public function student()
+    {
+        return $this->hasOne(Student::class);
+    }
+
+    /**
+     * Scope a query to only include active accounts.
+     */
+    public function scopeActive($query)
+    {
+        return $query->where('status', 'active');
     }
 }

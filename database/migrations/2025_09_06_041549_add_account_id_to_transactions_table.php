@@ -6,20 +6,28 @@ use Illuminate\Support\Facades\Schema;
 
 return new class extends Migration
 {
+    /**
+     * Run the migrations.
+     */
     public function up(): void
     {
         Schema::table('transactions', function (Blueprint $table) {
-            // ✅ Changed to string(50) to match students.account_id
-            // ✅ Removed foreign key constraint for now
-            $table->string('account_id', 50)->nullable()->after('user_id');
-            $table->index('account_id');
+            // Use foreignId for consistency
+            $table->foreignId('account_id')
+                  ->nullable()
+                  ->after('id')
+                  ->constrained('accounts')
+                  ->onDelete('cascade');
         });
     }
 
+    /**
+     * Reverse the migrations.
+     */
     public function down(): void
     {
         Schema::table('transactions', function (Blueprint $table) {
-            $table->dropIndex(['account_id']);
+            $table->dropForeign(['account_id']);
             $table->dropColumn('account_id');
         });
     }

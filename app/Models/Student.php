@@ -9,73 +9,70 @@ class Student extends Model
 {
     use HasFactory;
 
+    /**
+     * The attributes that are mass assignable.
+     *
+     * @var array<int, string>
+     */
     protected $fillable = [
-        'user_id',
-        'student_id',
-        'last_name',
+        'student_number',
         'first_name',
-        'middle_initial',
+        'middle_name',
+        'last_name',
         'email',
+        'phone',
+        'birth_date',
+        'address',
         'course',
         'year_level',
         'status',
-        'birthday',
-        'phone',
-        'address',
-        'total_balance',
         'account_id',
     ];
 
+    /**
+     * The attributes that should be cast.
+     *
+     * @var array<string, string>
+     */
     protected $casts = [
-        'birthday' => 'date',
-        'total_balance' => 'decimal:2',
+        'birth_date' => 'date',
     ];
 
     /**
-     * Get the user that owns the student.
-     */
-    public function user()
-    {
-        return $this->belongsTo(User::class);
-    }
-
-    /**
-     * Get the account associated with the student.
+     * Get the account that owns the student.
      */
     public function account()
     {
-        return $this->belongsTo(Account::class, 'account_id', 'id');
+        return $this->belongsTo(Account::class);
     }
 
     /**
-     * Get the payments for the student.
+     * Get the user associated with the student.
      */
-    public function payments()
+    public function user()
     {
-        return $this->hasMany(Payment::class);
+        return $this->belongsTo(User::class, 'email', 'email');
     }
 
     /**
-     * Get the student assessments.
+     * Get full name attribute.
      */
-    public function assessments()
+    public function getFullNameAttribute(): string
     {
-        return $this->hasMany(StudentAssessment::class);
+        $names = array_filter([
+            $this->first_name,
+            $this->middle_name,
+            $this->last_name,
+        ]);
+        
+        return implode(' ', $names);
     }
 
     /**
-     * Get the transactions for the student.
+     * Scope a query to only include active students.
      */
-    public function transactions()
+    public function scopeActive($query)
     {
-        return $this->hasMany(Transaction::class);
-    }
-
-    /**
-     * Get the full name attribute.
-     */
-    public function getFullNameAttribute()
-    {
-        return trim("{$this->first_name} {$this->middle_initial} {$this->last_name}");
+        return $query->where('status', 'active');
     }
 }
