@@ -13,18 +13,23 @@ return new class extends Migration
     {
         Schema::create('students', function (Blueprint $table) {
             $table->id();
+            $table->foreignId('user_id')->nullable()->constrained('users')->onDelete('cascade');
             $table->string('student_id')->unique();
-            $table->string('first_name');
-            $table->string('middle_name')->nullable();
             $table->string('last_name');
+            $table->string('first_name');
+            $table->string('middle_initial')->nullable();
             $table->string('email')->unique();
             $table->string('course')->nullable();
             $table->string('year_level')->nullable();
-            $table->string('status')->default('active');
-            $table->unsignedBigInteger('account_id')->nullable(); // ADD THIS LINE
+            $table->enum('status', ['enrolled', 'active', 'inactive', 'graduated', 'dropped'])->default('enrolled');
+            $table->date('birthday')->nullable();
+            $table->string('phone')->nullable();
+            $table->text('address')->nullable();
+            $table->decimal('total_balance', 10, 2)->default(0);
+            $table->string('account_id')->nullable();
             $table->timestamps();
             
-            // ADD THIS FOREIGN KEY CONSTRAINT
+            // Foreign key for account_id
             $table->foreign('account_id')
                   ->references('id')
                   ->on('accounts')

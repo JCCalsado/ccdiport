@@ -57,7 +57,7 @@ class User extends Authenticatable
 
     public function student(): HasOne
     {
-        return $this->hasOne(Student::class, 'user_id');
+         return $this->hasOne(Student::class);
     }
 
     public function account(): HasOne
