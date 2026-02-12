@@ -12,10 +12,19 @@ return new class extends Migration
     public function up(): void
     {
         Schema::table('users', function (Blueprint $table) {
-            // Add name fields after id
-            $table->string('first_name')->after('id')->nullable();
-            $table->string('middle_name')->after('first_name')->nullable();
-            $table->string('last_name')->after('middle_name')->nullable();
+            // Add all name fields
+            if (!Schema::hasColumn('users', 'first_name')) {
+                $table->string('first_name')->nullable()->after('id');
+            }
+            if (!Schema::hasColumn('users', 'middle_name')) {
+                $table->string('middle_name')->nullable()->after('first_name');
+            }
+            if (!Schema::hasColumn('users', 'middle_initial')) {
+                $table->string('middle_initial')->nullable()->after('middle_name');
+            }
+            if (!Schema::hasColumn('users', 'last_name')) {
+                $table->string('last_name')->nullable()->after('middle_initial');
+            }
         });
     }
 
@@ -25,7 +34,7 @@ return new class extends Migration
     public function down(): void
     {
         Schema::table('users', function (Blueprint $table) {
-            $table->dropColumn(['first_name', 'middle_name', 'last_name']);
+            $table->dropColumn(['first_name', 'middle_name', 'middle_initial', 'last_name']);
         });
     }
 };
