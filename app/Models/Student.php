@@ -55,6 +55,22 @@ class Student extends Model
     }
 
     /**
+     * Get the assessments for the student.
+     */
+    public function assessments()
+    {
+        return $this->hasMany(StudentAssessment::class);
+    }
+
+    /**
+     * Get the payment terms for the student.
+     */
+    public function paymentTerms()
+    {
+        return $this->hasMany(StudentPaymentTerm::class);
+    }
+
+    /**
      * Get full name attribute.
      */
     public function getFullNameAttribute(): string
