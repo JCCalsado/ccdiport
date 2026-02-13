@@ -20,15 +20,17 @@ class ComprehensiveUserSeeder extends Seeder
         // Clean up existing demo data
         echo "🧹 Cleaning up existing demo students...\n";
         Student::where('student_number', 'like', 'DEMO%')->delete();
+        Student::where('email', 'like', 'student%@ccdi.edu.ph')->delete();
         User::where('email', 'like', '%@demo.test')->delete();
-        echo "   ✓ No demo students to clean\n";
+        User::where('email', 'like', 'student%@ccdi.edu.ph')->delete();
+        echo "   ✓ Cleanup completed\n";
         
         // Seed admin and accounting staff
         echo "👤 Seeding admin and accounting staff...\n";
         
         // Create Admin User
         $admin = User::firstOrCreate(
-            ['email' => 'admin@ccdi.edu'],
+            ['email' => 'admin@ccdi.edu.ph'],
             [
                 'first_name' => 'Admin',
                 'last_name' => 'User',
@@ -52,7 +54,7 @@ class ComprehensiveUserSeeder extends Seeder
         
         // Create Accounting Staff
         $accounting = User::firstOrCreate(
-            ['email' => 'accounting@ccdi.edu'],
+            ['email' => 'accounting@ccdi.edu.ph'],
             [
                 'first_name' => 'Accounting',
                 'last_name' => 'Staff',
@@ -74,56 +76,63 @@ class ComprehensiveUserSeeder extends Seeder
         
         echo "   ✓ Accounting staff created: {$accounting->email}\n";
         
-        // Seed student users
-        echo "\n👨‍🎓 Seeding student users...\n";
+        // Seed 100 student users
+        echo "\n👨‍🎓 Seeding 100 student users...\n";
         
-        $students = [
-            [
-                'student_id' => '2021-00001',  // Changed from student_number
-                'first_name' => 'Juan',
-                'middle_initial' => 'D',  // Changed from middle_name
-                'last_name' => 'Cruz',
-                'email' => 'juan.delacruz@ccdi.edu',
-                'course' => 'BSCS',
-                'year_level' => '4',
-                'semester' => '2',
-            ],
-            [
-                'student_id' => '2021-00002',  // Changed from student_number
-                'first_name' => 'Maria',
-                'middle_initial' => 'S',  // Changed from middle_name
-                'last_name' => 'Garcia',
-                'email' => 'maria.garcia@ccdi.edu',
-                'course' => 'BSIT',
-                'year_level' => '3',
-                'semester' => '2',
-            ],
-            [
-                'student_id' => '2022-00001',  // Changed from student_number
-                'first_name' => 'Pedro',
-                'middle_initial' => 'R',  // Changed from middle_name
-                'last_name' => 'Lopez',
-                'email' => 'pedro.lopez@ccdi.edu',
-                'course' => 'BSCS',
-                'year_level' => '2',
-                'semester' => '2',
-            ],
+        // Filipino names
+        $firstNames = [
+            'Juan', 'Jose', 'Pedro', 'Miguel', 'Carlos',
+            'Maria', 'Ana', 'Carmen', 'Rosa', 'Teresa',
+            'Antonio', 'Manuel', 'Francisco', 'Rafael', 'Eduardo',
+            'Elena', 'Isabel', 'Lucia', 'Sofia', 'Patricia',
+            'Ricardo', 'Fernando', 'Roberto', 'Andres', 'Javier',
+            'Angela', 'Monica', 'Gloria', 'Diana', 'Cristina'
         ];
         
-        foreach ($students as $studentData) {
+        $lastNames = [
+            'Dela Cruz', 'Santos', 'Reyes', 'Garcia', 'Ramos',
+            'Mendoza', 'Torres', 'Flores', 'Gonzales', 'Castro',
+            'Rivera', 'Bautista', 'Santiago', 'Fernandez', 'Lopez',
+            'Morales', 'Aquino', 'Villanueva', 'Cruz', 'Jimenez'
+        ];
+        
+        $middleInitials = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'J', 'K', 'L', 'M', 'N', 'P', 'R', 'S', 'T', 'V'];
+        
+        $courses = [
+            'BS Computer Science',
+            'BS Information Technology',
+            'BS Electrical Engineering',
+            'BS Electronics Engineering'
+        ];
+        
+        $yearLevels = ['1', '2', '3', '4'];
+        $semesters = ['1', '2'];
+        $statuses = ['enrolled', 'enrolled', 'enrolled', 'enrolled', 'inactive']; // 80% enrolled
+        
+        for ($i = 1; $i <= 100; $i++) {
+            $email = "student{$i}@ccdi.edu.ph";
+            $studentNumber = '2025-' . str_pad($i, 4, '0', STR_PAD_LEFT);
+            $firstName = $firstNames[array_rand($firstNames)];
+            $lastName = $lastNames[array_rand($lastNames)];
+            $middleInitial = $middleInitials[array_rand($middleInitials)];
+            $course = $courses[array_rand($courses)];
+            $yearLevel = $yearLevels[array_rand($yearLevels)];
+            $semester = $semesters[array_rand($semesters)];
+            $status = $statuses[array_rand($statuses)];
+            
             // Create User
             $user = User::firstOrCreate(
-                ['email' => $studentData['email']],
+                ['email' => $email],
                 [
-                    'first_name' => $studentData['first_name'],
-                    'middle_initial' => $studentData['middle_initial'],  // Changed
-                    'last_name' => $studentData['last_name'],
+                    'first_name' => $firstName,
+                    'middle_initial' => $middleInitial,
+                    'last_name' => $lastName,
                     'password' => Hash::make('password'),
                     'role' => 'student',
-                    'student_id' => $studentData['student_id'],  // Changed
-                    'course' => $studentData['course'],
-                    'year_level' => $studentData['year_level'],
-                    'semester' => $studentData['semester'] ?? null,  // Added null fallback
+                    'student_id' => $studentNumber, // Users table has student_id
+                    'course' => $course,
+                    'year_level' => $yearLevel,
+                    'semester' => $semester,
                     'status' => 'active',
                 ]
             );
@@ -133,32 +142,43 @@ class ComprehensiveUserSeeder extends Seeder
                 $account = Account::create([
                     'user_id' => $user->id,
                     'account_number' => 'ACC-STU-' . str_pad($user->id, 6, '0', STR_PAD_LEFT),
-                    'balance' => 0,
+                    'balance' => -rand(5000, 25000), // Negative balance = student owes money
                     'status' => 'active',
                 ]);
                 
                 // Create Student Record
+                // ✅ ONLY use columns that exist in students table
                 Student::firstOrCreate(
-                    ['email' => $studentData['email']],
+                    ['email' => $email],
                     [
-                        'student_number' => $studentData['student_id'],  // Students table uses student_number
-                        'first_name' => $studentData['first_name'],
-                        'middle_name' => $studentData['middle_initial'],  // Students table uses middle_name
-                        'last_name' => $studentData['last_name'],
-                        'course' => $studentData['course'],
-                        'year_level' => $studentData['year_level'],
-                        'status' => 'active',
                         'account_id' => $account->id,
+                        'student_number' => $studentNumber,  // ✅ Use student_number (not student_id)
+                        'first_name' => $firstName,
+                        'middle_name' => $middleInitial,
+                        // ✅ REMOVED: 'middle_initial' - doesn't exist in students table
+                        // ✅ REMOVED: 'student_id' - doesn't exist in students table
+                        'last_name' => $lastName,
+                        'email' => $email,
+                        'course' => $course,
+                        'year_level' => $yearLevel,
+                        'semester' => $semester,
+                        'status' => $status,
                     ]
                 );
             }
             
-            echo "   ✓ Student created: {$user->email} ({$studentData['student_id']})\n";
+            if ($i % 20 === 0) {
+                echo "   ✓ Created {$i}/100 students...\n";
+            }
         }
         
         echo "\n✅ Comprehensive user seeding completed!\n";
         echo "   Total users: " . User::count() . "\n";
         echo "   Total accounts: " . Account::count() . "\n";
         echo "   Total students: " . Student::count() . "\n";
+        echo "\n📝 Login credentials:\n";
+        echo "   Admin: admin@ccdi.edu.ph / password\n";
+        echo "   Accounting: accounting@ccdi.edu.ph / password\n";
+        echo "   Students: student1@ccdi.edu.ph - student100@ccdi.edu.ph / password\n";
     }
 }

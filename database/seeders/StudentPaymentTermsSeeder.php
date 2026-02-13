@@ -43,34 +43,46 @@ class StudentPaymentTermsSeeder extends Seeder
                 continue;
             }
 
-            // Calculate payment terms (e.g., 3 terms)
+            // Calculate payment terms (5 terms with percentages)
+            // Upon Registration: 42.15%, Prelim: 17.86%, Midterm: 17.86%, Semi-Final: 14.88%, Final: 7.26%
             $totalAmount = $assessment->total_assessment;
-            $numberOfTerms = 3;
-            $amountPerTerm = round($totalAmount / $numberOfTerms, 2);
+            
+            try {
+                $startDate = Carbon::parse(explode('-', $assessment->school_year)[0] . '-08-01');
+            } catch (\Exception $e) {
+                $startDate = Carbon::parse($assessment->created_at);
+            }
 
-            // Adjust last term to account for rounding
-            $lastTermAmount = $totalAmount - ($amountPerTerm * ($numberOfTerms - 1));
-
-            $terms = [
-                [
-                    'term_name' => 'Prelim',
-                    'term_order' => 1,
-                    'amount' => $amountPerTerm,
-                    'due_date' => Carbon::parse($assessment->created_at)->addDays(30),
-                ],
-                [
-                    'term_name' => 'Midterm',
-                    'term_order' => 2,
-                    'amount' => $amountPerTerm,
-                    'due_date' => Carbon::parse($assessment->created_at)->addDays(60),
-                ],
-                [
-                    'term_name' => 'Final',
-                    'term_order' => 3,
-                    'amount' => $lastTermAmount,
-                    'due_date' => Carbon::parse($assessment->created_at)->addDays(90),
-                ],
+            // Percentages to match the new 5-term structure
+            $percentages = [
+                ['name' => 'Upon Registration', 'percentage' => 42.15, 'weeks' => 0],
+                ['name' => 'Prelim', 'percentage' => 17.86, 'weeks' => 6],
+                ['name' => 'Midterm', 'percentage' => 17.86, 'weeks' => 12],
+                ['name' => 'Semi-Final', 'percentage' => 14.88, 'weeks' => 15],
+                ['name' => 'Final', 'percentage' => 7.26, 'weeks' => 18],
             ];
+
+            $terms = [];
+            $totalCalculated = 0;
+
+            for ($i = 0; $i < count($percentages); $i++) {
+                $termData = $percentages[$i];
+                
+                if ($i === count($percentages) - 1) {
+                    // Last term gets the remainder to avoid rounding issues
+                    $amount = $totalAmount - $totalCalculated;
+                } else {
+                    $amount = round($totalAmount * ($termData['percentage'] / 100), 2);
+                    $totalCalculated += $amount;
+                }
+
+                $terms[] = [
+                    'term_name' => $termData['name'],
+                    'term_order' => $i + 1,
+                    'amount' => $amount,
+                    'due_date' => $startDate->copy()->addWeeks($termData['weeks']),
+                ];
+            }
 
             foreach ($terms as $termData) {
                 StudentPaymentTerm::create([

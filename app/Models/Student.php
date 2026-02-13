@@ -2,98 +2,92 @@
 
 namespace App\Models;
 
-use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class Student extends Model
 {
-    use HasFactory;
-
     protected $fillable = [
+        'account_id',
         'student_number',
+        'student_id',
         'first_name',
         'middle_name',
+        'middle_initial',
         'last_name',
         'email',
-        'phone',
-        'birth_date',
-        'address',
         'course',
         'year_level',
+        'semester',
         'status',
-        'account_id',
-    ];
-
-    protected $casts = [
-        'birth_date' => 'date',
     ];
 
     /**
-     * Get the account that owns the student.
+     * Get the account that owns the student
+     * ✅ CORRECT: Use account_id
      */
-    public function account()
+    public function account(): BelongsTo
     {
-        return $this->belongsTo(Account::class);
+        return $this->belongsTo(Account::class, 'account_id');
     }
 
     /**
-     * Get the user associated with the student (via email).
+     * Get the user through the account
+     * ✅ CORRECT: Use hasOneThrough
      */
-    public function user()
+    public function user(): BelongsTo
     {
-        return $this->belongsTo(User::class, 'email', 'email');
+        // Students link to Users through Accounts
+        // students.account_id -> accounts.id -> accounts.user_id -> users.id
+        return $this->hasOneThrough(
+            User::class,           // Final model
+            Account::class,        // Intermediate model
+            'id',                  // Foreign key on accounts table
+            'id',                  // Foreign key on users table
+            'account_id',          // Local key on students table
+            'user_id'              // Local key on accounts table
+        );
     }
 
     /**
-     * Get the assessments for the student.
-     * NOTE: student_assessments uses user_id, not student_id
+     * Get payment terms for this student
      */
-    public function assessments()
-    {
-        return $this->hasMany(StudentAssessment::class, 'user_id', 'email')
-                    ->where('student_assessments.user_id', function($query) {
-                        $query->select('id')
-                              ->from('users')
-                              ->whereColumn('users.email', 'students.email')
-                              ->limit(1);
-                    });
-    }
-
-    /**
-     * Get the payment terms for the student.
-     */
-    public function paymentTerms()
+    public function paymentTerms(): HasMany
     {
         return $this->hasMany(StudentPaymentTerm::class, 'account_id', 'account_id');
     }
 
     /**
-     * Get the payments for the student.
+     * Get assessments for this student
      */
-    public function payments()
+    public function assessments(): HasMany
     {
-        return $this->hasMany(Payment::class);
+        return $this->hasMany(StudentAssessment::class, 'account_id', 'account_id');
     }
 
     /**
-     * Get full name attribute.
+     * Get payments for this student
+     */
+    public function payments(): HasMany
+    {
+        return $this->hasMany(Payment::class, 'account_id', 'account_id');
+    }
+
+    /**
+     * Get transactions for this student
+     */
+    public function transactions(): HasMany
+    {
+        return $this->hasMany(Transaction::class, 'account_id', 'account_id');
+    }
+
+    /**
+     * Get full name attribute
      */
     public function getFullNameAttribute(): string
     {
-        $names = array_filter([
-            $this->first_name,
-            $this->middle_name,
-            $this->last_name,
-        ]);
-        
-        return implode(' ', $names);
-    }
-
-    /**
-     * Scope a query to only include active students.
-     */
-    public function scopeActive($query)
-    {
-        return $query->where('status', 'active');
+        $middle = $this->middle_initial ?? $this->middle_name ?? '';
+        return trim("{$this->first_name} {$middle} {$this->last_name}");
     }
 }
