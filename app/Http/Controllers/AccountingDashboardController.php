@@ -4,12 +4,14 @@ namespace App\Http\Controllers;
 
 use Illuminate\Http\Request;
 use Inertia\Inertia;
+use App\Models\Account;
 use App\Models\Student;
 use App\Models\Transaction;
 use App\Models\Payment;
 use App\Models\StudentAssessment;
 use App\Models\StudentPaymentTerm;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 
 class AccountingDashboardController extends Controller
 {
@@ -19,73 +21,108 @@ class AccountingDashboardController extends Controller
         // OVERVIEW STATISTICS
         // ============================================
         
-        $totalStudents = Student::whereNotNull('account_id')->count();
-        $activeStudents = Student::whereNotNull('account_id')
-            ->where('status', 'enrolled')
-            ->count();
+        $totalStudents = Student::count();
+        $activeStudents = Student::where('status', 'enrolled')->count();
         
         // ============================================
         // FINANCIAL STATISTICS
         // ============================================
         
-        $totalOutstanding = DB::table('students')
-            ->whereNotNull('account_id')
-            ->sum('total_balance');
-        
-        $recentPayments30d = Payment::whereNotNull('account_id')
+        // Get total outstanding from student accounts (negative balance = debt)
+        $totalOutstanding = abs(Account::whereHas('user', function($query) {
+            $query->where('role', 'student');
+        })->sum('balance'));
+
+        // ✅ FLEXIBLE PAYMENT QUERIES - Check which column exists
+        $paymentColumns = Schema::getColumnListing('payments');
+        $hasAccountId = in_array('account_id', $paymentColumns);
+        $hasStudentId = in_array('student_id', $paymentColumns);
+        $hasUserId = in_array('user_id', $paymentColumns);
+
+        // Build payment query based on available columns
+        $paymentQuery = Payment::query();
+        if ($hasAccountId) {
+            $paymentQuery->whereNotNull('account_id');
+        } elseif ($hasStudentId) {
+            $paymentQuery->whereNotNull('student_id');
+        } elseif ($hasUserId) {
+            $paymentQuery->whereNotNull('user_id');
+        }
+
+        // Recent payments in last 30 days
+        $recentPayments30d = (clone $paymentQuery)
             ->where('created_at', '>=', now()->subDays(30))
             ->where('status', Payment::STATUS_COMPLETED)
             ->sum('amount');
-        
-        $todayPayments = Payment::whereNotNull('account_id')
+
+        // Today's payments
+        $todayPayments = (clone $paymentQuery)
             ->whereDate('created_at', today())
             ->where('status', Payment::STATUS_COMPLETED)
             ->sum('amount');
-        
-        $pendingCharges = Transaction::whereNotNull('account_id')
-            ->where('kind', 'charge')
-            ->where('status', 'pending')
+
+        // Total revenue
+        $totalRevenue = (clone $paymentQuery)
+            ->where('status', Payment::STATUS_COMPLETED)
             ->sum('amount');
         
-        $totalRevenue = Payment::whereNotNull('account_id')
-            ->where('status', Payment::STATUS_COMPLETED)
+        // ✅ FLEXIBLE TRANSACTION QUERIES
+        $transactionColumns = Schema::getColumnListing('transactions');
+        $txnHasAccountId = in_array('account_id', $transactionColumns);
+
+        $transactionQuery = Transaction::query();
+        if ($txnHasAccountId) {
+            $transactionQuery->whereNotNull('account_id');
+        }
+
+        // Pending charges
+        $pendingCharges = (clone $transactionQuery)
+            ->where('kind', 'charge')
+            ->where('status', 'pending')
             ->sum('amount');
         
         // ============================================
         // RECENT TRANSACTIONS
         // ============================================
         
-        $recentTransactions = Transaction::with(['student' => function($query) {
-                $query->select('id', 'account_id', 'student_id', 'first_name', 'last_name', 'middle_initial');
+        $recentTransactions = (clone $transactionQuery)
+            ->with(['student' => function($query) {
+                $query->select('id', 'student_id', 'first_name', 'last_name', 'middle_initial');
             }])
-            ->whereNotNull('account_id')
             ->latest('created_at')
             ->take(15)
             ->get()
-            ->map(function ($txn) {
-                return [
+            ->map(function ($txn) use ($txnHasAccountId) {
+                $data = [
                     'id' => $txn->id,
-                    'account_id' => $txn->account_id,
                     'reference' => $txn->reference,
                     'kind' => $txn->kind,
                     'type' => $txn->type,
                     'amount' => (float) $txn->amount,
                     'status' => $txn->status,
                     'created_at' => $txn->created_at->toISOString(),
-                    'student' => $txn->student ? [
-                        'account_id' => $txn->student->account_id,
+                    'student' => null,
+                ];
+
+                if ($txnHasAccountId) {
+                    $data['account_id'] = $txn->account_id;
+                }
+
+                if ($txn->student) {
+                    $data['student'] = [
                         'student_id' => $txn->student->student_id,
                         'name' => $txn->student->full_name,
-                    ] : null,
-                ];
+                    ];
+                }
+
+                return $data;
             });
         
         // ============================================
         // STUDENTS WITH OVERDUE PAYMENTS
         // ============================================
         
-        $overdueStudents = Student::whereNotNull('account_id')
-            ->whereHas('paymentTerms', function($query) {
+        $overdueStudents = Student::whereHas('paymentTerms', function($query) {
                 $query->where('due_date', '<', now())
                     ->where('status', '!=', 'paid')
                     ->whereRaw('paid_amount < amount');
@@ -106,7 +143,6 @@ class AccountingDashboardController extends Controller
                     : 0;
                 
                 return [
-                    'account_id' => $student->account_id,
                     'student_id' => $student->student_id,
                     'name' => $student->full_name,
                     'course' => $student->course,
@@ -122,34 +158,50 @@ class AccountingDashboardController extends Controller
         // RECENT ASSESSMENTS
         // ============================================
         
-        $recentAssessments = StudentAssessment::with(['student' => function($query) {
-                $query->select('id', 'account_id', 'student_id', 'first_name', 'last_name', 'middle_initial', 'course');
+        $assessmentColumns = Schema::getColumnListing('student_assessments');
+        $assessmentHasAccountId = in_array('account_id', $assessmentColumns);
+
+        $assessmentQuery = StudentAssessment::query();
+        if ($assessmentHasAccountId) {
+            $assessmentQuery->whereNotNull('account_id');
+        }
+
+        $recentAssessments = (clone $assessmentQuery)
+            ->with(['student' => function($query) {
+                $query->select('id', 'student_id', 'first_name', 'last_name', 'middle_initial', 'course');
             }])
-            ->whereNotNull('account_id')
             ->where('status', 'active')
             ->latest('created_at')
             ->take(5)
             ->get()
-            ->map(function ($assessment) {
-                return [
+            ->map(function ($assessment) use ($assessmentHasAccountId) {
+                $data = [
                     'id' => $assessment->id,
-                    'account_id' => $assessment->account_id,
                     'assessment_number' => $assessment->assessment_number,
                     'total_assessment' => (float) $assessment->total_assessment,
                     'created_at' => $assessment->created_at->toISOString(),
-                    'student' => $assessment->student ? [
-                        'account_id' => $assessment->student->account_id,
-                        'name' => $assessment->student->full_name,
-                        'program' => $assessment->student->course, // ✅ Use course directly
-                    ] : null,
+                    'student' => null,
                 ];
+
+                if ($assessmentHasAccountId) {
+                    $data['account_id'] = $assessment->account_id;
+                }
+
+                if ($assessment->student) {
+                    $data['student'] = [
+                        'name' => $assessment->student->full_name,
+                        'program' => $assessment->student->course,
+                    ];
+                }
+
+                return $data;
             });
 
         // ============================================
         // PAYMENT BREAKDOWN BY METHOD (Last 30 days)
         // ============================================
         
-        $paymentByMethod = Payment::whereNotNull('account_id')
+        $paymentByMethod = (clone $paymentQuery)
             ->where('status', Payment::STATUS_COMPLETED)
             ->where('created_at', '>=', now()->subDays(30))
             ->select('payment_method', DB::raw('COUNT(*) as count'), DB::raw('SUM(amount) as total'))
@@ -157,7 +209,7 @@ class AccountingDashboardController extends Controller
             ->get()
             ->map(function ($item) {
                 return [
-                    'method' => ucfirst(str_replace('_', ' ', $item->payment_method)),
+                    'method' => ucfirst(str_replace('_', ' ', $item->payment_method ?? 'Unknown')),
                     'count' => $item->count,
                     'total' => (float) $item->total,
                 ];
@@ -167,8 +219,7 @@ class AccountingDashboardController extends Controller
         // STUDENTS BY YEAR LEVEL
         // ============================================
         
-        $studentsByYearLevel = Student::whereNotNull('account_id')
-            ->where('status', 'enrolled')
+        $studentsByYearLevel = Student::where('status', 'enrolled')
             ->select('year_level', DB::raw('COUNT(*) as count'))
             ->groupBy('year_level')
             ->get()
@@ -203,50 +254,62 @@ class AccountingDashboardController extends Controller
         // STUDENTS WITH OUTSTANDING BALANCE
         // ============================================
         
-        $studentsWithBalance = Student::whereNotNull('account_id')
-            ->where('status', 'enrolled')
-            ->where('total_balance', '>', 0)
-            ->orderBy('total_balance', 'desc')
-            ->take(10)
+        $studentsWithBalance = Student::where('status', 'enrolled')
+            ->with('account')
             ->get()
+            ->filter(function ($student) {
+                return $student->account && abs($student->account->balance) > 0;
+            })
+            ->sortByDesc(function ($student) {
+                return abs($student->account->balance);
+            })
+            ->take(10)
             ->map(function ($student) {
                 return [
-                    'account_id' => $student->account_id,
                     'student_id' => $student->student_id,
                     'name' => $student->full_name,
                     'course' => $student->course,
                     'year_level' => $student->year_level,
-                    'total_balance' => (float) $student->total_balance,
+                    'total_balance' => (float) abs($student->account->balance),
                 ];
-            });
+            })
+            ->values();
 
         // ============================================
         // RECENT PAYMENTS (Detailed list)
         // ============================================
         
-        $recentPaymentsList = Payment::with(['studentByAccount' => function($query) {
-                $query->select('id', 'account_id', 'student_id', 'first_name', 'last_name', 'middle_initial');
+        $recentPaymentsList = (clone $paymentQuery)
+            ->with(['student' => function($query) {
+                $query->select('id', 'student_id', 'first_name', 'last_name', 'middle_initial');
             }])
-            ->whereNotNull('account_id')
             ->where('status', Payment::STATUS_COMPLETED)
             ->latest('paid_at')
             ->take(10)
             ->get()
-            ->map(function ($payment) {
-                return [
+            ->map(function ($payment) use ($hasAccountId) {
+                $data = [
                     'id' => $payment->id,
-                    'account_id' => $payment->account_id,
                     'amount' => (float) $payment->amount,
                     'payment_method' => $payment->payment_method,
                     'reference_number' => $payment->reference_number,
                     'description' => $payment->description,
                     'paid_at' => $payment->paid_at?->toISOString(),
-                    'student' => $payment->studentByAccount ? [
-                        'account_id' => $payment->studentByAccount->account_id,
-                        'student_id' => $payment->studentByAccount->student_id,
-                        'name' => $payment->studentByAccount->full_name,
-                    ] : null,
+                    'student' => null,
                 ];
+
+                if ($hasAccountId) {
+                    $data['account_id'] = $payment->account_id;
+                }
+
+                if ($payment->student) {
+                    $data['student'] = [
+                        'student_id' => $payment->student->student_id,
+                        'name' => $payment->student->full_name,
+                    ];
+                }
+
+                return $data;
             });
 
         // ============================================
@@ -256,15 +319,12 @@ class AccountingDashboardController extends Controller
         $paymentTrends = [];
         for ($i = 6; $i >= 0; $i--) {
             $date = now()->subDays($i);
-            $dailyTotal = Payment::whereNotNull('account_id')
+            $dailyQuery = (clone $paymentQuery)
                 ->where('status', Payment::STATUS_COMPLETED)
-                ->whereDate('paid_at', $date)
-                ->sum('amount');
-            
-            $dailyCount = Payment::whereNotNull('account_id')
-                ->where('status', Payment::STATUS_COMPLETED)
-                ->whereDate('paid_at', $date)
-                ->count();
+                ->whereDate('paid_at', $date);
+
+            $dailyTotal = $dailyQuery->sum('amount');
+            $dailyCount = $dailyQuery->count();
             
             $paymentTrends[] = [
                 'date' => $date->format('Y-m-d'),
@@ -281,12 +341,20 @@ class AccountingDashboardController extends Controller
         
         $currentMonthStart = now()->startOfMonth();
         $currentMonthEnd = now()->endOfMonth();
+
+        $paymentTermColumns = Schema::getColumnListing('student_payment_terms');
+        $termHasAccountId = in_array('account_id', $paymentTermColumns);
+
+        $termQuery = StudentPaymentTerm::query();
+        if ($termHasAccountId) {
+            $termQuery->whereNotNull('account_id');
+        }
         
-        $expectedCollection = StudentPaymentTerm::whereNotNull('account_id')
+        $expectedCollection = (clone $termQuery)
             ->whereBetween('due_date', [$currentMonthStart, $currentMonthEnd])
             ->sum('amount');
         
-        $actualCollection = Payment::whereNotNull('account_id')
+        $actualCollection = (clone $paymentQuery)
             ->where('status', Payment::STATUS_COMPLETED)
             ->whereBetween('paid_at', [$currentMonthStart, $currentMonthEnd])
             ->sum('amount');
@@ -299,7 +367,7 @@ class AccountingDashboardController extends Controller
         // PENDING ASSESSMENT COUNT
         // ============================================
         
-        $pendingAssessments = StudentAssessment::whereNotNull('account_id')
+        $pendingAssessments = (clone $assessmentQuery)
             ->where('status', 'active')
             ->whereHas('student', function($query) {
                 $query->where('status', 'enrolled');
